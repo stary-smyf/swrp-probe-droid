@@ -1,0 +1,8 @@
+"Jellyfish"
+{
+
+	"$basetexture" "effects/splinter_cell/thermal_radius"
+	"$envmap" "effects/splinter_cell/thermal_spectrum"
+	"$pulserate"	1
+
+}

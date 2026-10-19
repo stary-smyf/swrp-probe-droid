@@ -1,0 +1,23 @@
+
+"Modulate"
+ {
+$basetexture              "vgui\splinter_cell\svm_noise" //Multiplies the color behind it with this surface's texture.
+$basetexturetransform	"center .5 .5 scale 14 8 rotate 0  translate 0 0"
+$mod2x                    "1"  
+$vertexalpha	"1"
+$vertexcolor	"1"
+$additiive                   "1"
+$color2		"[0.2 0.2 0.2]"
+ "$alphatest"        1
+"Proxies"
+        {
+                "AnimatedTexture"
+                {
+                         "animatedtexturevar" "$basetexture"
+                         "animatedtextureframenumvar" "$frame"
+                         "animatedtextureframerate" 22.00
+                }
+
+        }
+
+}

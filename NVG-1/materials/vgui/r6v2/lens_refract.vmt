@@ -1,0 +1,28 @@
+Refract
+{
+$MIRRORABOUTVIEWPORTEDGES 1
+"!360?$NOVIEWPORTFIXUP" 	1
+$model 		0
+$refractamount ".07"
+$bluramount 1
+$scale "[1 1]"
+$dudvmap "vgui\r6v2\scope_dudv_full"
+$normalmap "vgui\r6v2\scope_normal_full"
+$bumpframe 	0
+$translucent 	1
+$ignorez 		1
+$forcerefract 	1
+$nofog 		1
+$refracttinttexture "vgui\r6v2\scope_mask"
+$refracttint	"[1 1 1]"
+
+$scaleamount "[1 -1]"
+Proxies
+{
+TextureTransform
+{
+scaleVar $scaleamount
+resultVar $bumptransform
+}
+}
+}

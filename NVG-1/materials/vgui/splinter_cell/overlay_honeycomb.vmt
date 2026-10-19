@@ -1,0 +1,10 @@
+UnlitGeneric
+{
+	$basetexture "vgui/splinter_cell/overlay_honeycomb"
+	$basetexturetransform	"center .5 .5 scale 6 8 rotate 90  translate 0 0"
+	$translucent 	1
+	$vertexalpha  1
+	$vertexcolor   1
+	$additive     1
+	$color2	"[.5 .5 .5]"
+}

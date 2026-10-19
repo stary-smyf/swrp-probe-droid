@@ -1,0 +1,17 @@
+{
+  "title": "[NVG Base] - Splinter Cell Loadout Pack",
+  "type": "effects",
+  "tags": [
+    "roleplay",
+    "scenic"
+  ],
+  "ignore": [
+    ".rar",
+    ".tga",
+    ".json",
+    "*.tga",
+    "*.bmp",
+    "*.ssc",
+    "*.scc"
+  ]
+}

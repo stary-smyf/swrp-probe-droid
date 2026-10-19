@@ -1,4 +1,4 @@
--- Process actual client/server commands to verify a continuous three-second hold.
+-- Process actual client/server commands to verify a continuous two-second hold.
 local file = assert(io.open("lua/autorun/probe_droid.lua", "rb"))
 local source = file:read("*a")
 file:close()
@@ -44,7 +44,7 @@ local function step(time, held, forced)
 end
 probe = newProbe()
 step(0, true)
-assert(probe.deadline == 3 and probe.exits == 0, "tap exited immediately or countdown missing")
+assert(probe.deadline == 2 and probe.exits == 0, "tap exited immediately or countdown missing")
 step(0.1, false)
 assert(probe.deadline == 0 and probe.ExitHoldStarted == nil, "release did not cancel")
 step(1, true)
@@ -52,22 +52,22 @@ for i = 1, 10 do step(1 + i / 10, true) end
 step(2.1, false)
 assert(probe.exits == 0, "partial hold ended flight")
 step(3, true)
-for i = 1, 29 do step(3 + i / 10, true) end
-assert(probe.exits == 0, "exit completed before three seconds")
-step(6, true)
-assert(probe.exits == 1, "continuous three-second hold failed to exit")
+for i = 1, 19 do step(3 + i / 10, true) end
+assert(probe.exits == 0, "exit completed before two seconds")
+step(5, true)
+assert(probe.exits == 1, "continuous two-second hold failed to exit")
 
 probe = newProbe()
 step(10, true)
 step(10.1, true)
 step(11, true)
-assert(probe.ExitHoldStarted == 11 and probe.deadline == 14, "input gap did not restart countdown")
+assert(probe.ExitHoldStarted == 11 and probe.deadline == 13, "input gap did not restart countdown")
 step(11.1, true, true)
 assert(probe.deadline == 0 and probe.ExitHoldStarted == nil, "forced backup command continued exit hold")
 for i = 1, 40 do step(11.1 + i / 10, true, true) end
 assert(probe.exits == 0, "stale backup commands ended flight")
 probe = newProbe()
 step(20, true)
-assert(probe.deadline == 23 and probe.exits == 0, "new flight inherited exit progress")
+assert(probe.deadline == 22 and probe.exits == 0, "new flight inherited exit progress")
 assert(probe.LastInputTime == 20, "flight controls stopped updating while holding exit")
 print("Exit hold checks passed: taps, cancellation, continuous hold, input gaps, stale commands and new flights")

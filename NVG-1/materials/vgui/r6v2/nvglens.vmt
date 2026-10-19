@@ -1,0 +1,15 @@
+Refract
+{
+	$normalmap 		"vgui/splinter_cell/nvg_lens"
+	$refractamount 		.02
+	$forcerefract 		1
+	$bluramount 		4
+//	$nofog 			1
+	$modulate 		1
+//	$additive 			1
+//	$vertexalpha 		1
+	$vertexcolor 		1
+	$translucent 		1
+	$refracttint [ 1 0.7 0.75 ]
+	$MIRRORABOUTVIEWPORTEDGES 1
+}

@@ -1,0 +1,20 @@
+"VertexlitGeneric"
+{
+//	"$additive" 1
+//	"$translucent" 1
+	"$vertexcolor" 1
+//	"$vertexalpha" 1
+	"$nodecal" 1
+	"$nocull"	1
+	"$basetexture" "effects\splinter_cell\thermal_spectrum"
+	$basetexturetransform	"center .5 .5 scale .4 .8 rotate 90  translate 0 0"
+	$selfillum			1
+//	"$detail"	"effects\mgs3\thermal_spectrum"
+	"$detailscale"	.7
+	"$detailblendmode"	5
+	"$detailblendfactor"	2
+
+
+
+}
+

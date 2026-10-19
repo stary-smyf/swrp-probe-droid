@@ -1,0 +1,10 @@
+{
+	"title": "NVG Base",
+	"type": "effects",
+	"tags": ["roleplay","realism"],
+	"ignore":
+	[
+		"*.md",
+		"*.jpeg"
+	]
+}

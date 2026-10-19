@@ -1,0 +1,24 @@
+"VertexlitGeneric"
+{
+//	"$additive" 1
+//	"$translucent" 1
+	"$vertexcolor" 1
+//	"$vertexalpha" 1
+	"$nodecal" 1
+	"$nocull"	1
+	"$basetexture" "effects/splinter_cell/orgsen_overlay"
+	"$lightwarptexture" "effects/splinter_cell/motion_radius"
+	"$detail"	"effects\splinter_cell\thermal_noise"
+	"$detailscale"	.4
+	"$detailblendmode"	1
+	"$detailblendfactor"	2
+	$emissiveBlendEnabled 1
+	$emissiveBlendTexture     		"effects\splinter_cell\motion_radius"
+	$emissiveBlendBaseTexture		"effects/splinter_cell/thermal_noise"
+	$emissiveBlendFlowTexture     	"effects/splinter_cell/motion_radius"
+	$emissiveBlendTint "[1 1 1]"
+	$emissiveBlendStrength 15
+	$emissiveBlendScrollVector "[.5 .5]"
+
+
+}

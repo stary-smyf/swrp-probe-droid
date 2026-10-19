@@ -1,0 +1,8 @@
+UnlitGeneric
+{
+	$basetexture "vgui/splinter_cell/overlay_interlace2"
+	$translucent 	1
+	$vertexalpha  1
+	$vertexcolor   1
+//	$additive     1
+}

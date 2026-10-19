@@ -16,7 +16,9 @@ The tests load the actual addon functions with deterministic engine API mocks:
 
 - `deployment_test.lua` checks stationary grounded deployment and rejects motion,
   airborne players (including the jump apex), ladders, and noclip before spawning.
-- `exit_hold_test.lua` checks the three-second exit hold through client/server
+- `zoom_test.lua` checks LMB zoom cycling, release handling, optical magnification,
+  aiming sensitivity, new-flight reset, and normal controls outside a flight.
+- `exit_hold_test.lua` checks the two-second exit hold through client/server
   input, release cancellation, interrupted input, stale commands, and new flights.
 - `npc_targeting_test.lua` checks hostile/friendly targeting, visibility, stealth
   memory cleanup, reacquisition, right-click input through client and server

@@ -1,0 +1,11 @@
+UnlitGeneric
+{
+	$basetexture "vgui/r6v2/scope_mask"
+	$basetexturetransform	"center .5 .5 scale .87 .86 rotate 90  translate 0 0"
+	$translucent 	1
+	$vertexalpha  1
+	$vertexcolor   1
+	$additive     0
+	$ignorez		1
+	$color2		"[.15 .15 .15]"
+}

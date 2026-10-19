@@ -16,10 +16,13 @@ Alternatively, use `give weapon_probe_droid` in the console where permitted.
 Left click in an open area to spawn the probe and immediately enter its camera.
 Deployment requires standing still on the ground. Moving, jumping, falling,
 and noclip block deployment until you stop and land.
+Successful deployment plays a mechanical startup sound from the drone, audible
+to its pilot and nearby players.
 
 | Control | Action |
 | --- | --- |
 | Mouse | Look/steer |
+| Left click (in flight) | Cycle zoom: 1x / 3x / 6x / 1x |
 | W / S | Fly forward/back along the camera direction |
 | A / D | Strafe |
 | Space / Ctrl | Ascend / descend |
@@ -27,12 +30,14 @@ and noclip block deployment until you stop and land.
 | R (reload binding) | Toggle red-hot thermovision |
 | N | Toggle night vision |
 | Right click (secondary attack binding) | Toggle stealth |
-| Hold E for 3 seconds | Destroy the probe and return to your body |
+| Hold E for 2 seconds | Destroy the probe and return to your body |
 
 Your body stays at the launch point and remains vulnerable. The drone settles
 into a hover after releasing the controls and collides with the map, props, and
 other players. Holding E shows an exit countdown and progress bar; releasing
-it before three seconds cancels the exit.
+it before two seconds cancels the exit.
+Zoom starts at 1x for each flight. The HUD shows the current magnification;
+mouse sensitivity scales down at 3x and 6x for precise aiming.
 Flight accelerates smoothly and glides briefly when you release movement;
 reverse thrust brakes the drift. The first-person camera banks and sways with
 motion. Set `probe_droid_camera_sway 0` to disable camera movement, or choose a

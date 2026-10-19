@@ -1,0 +1,8 @@
+"Modulate"
+ {
+$basetexture              "vgui/white" //Multiplies the color behind it with this surface's texture.
+$mod2x                    "1"  
+$additiive                   "1"
+$color2		"[2 0.3 0.2]"
+ "$alpha"        0.1
+ }

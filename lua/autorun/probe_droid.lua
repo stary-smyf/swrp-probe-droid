@@ -68,14 +68,14 @@ hook.Add("StartCommand", "ProbeDroid.FlightInput", function(ply, cmd)
             -- commands must not finish an exit while the pilot is disconnected.
             if not probe.ExitHoldStarted or now - probe.LastExitCommand > 0.25 then
                 probe.ExitHoldStarted = now
-                probe:SetNW2Float("ProbeDroidExitEnd", now + 3)
+                probe:SetNW2Float("ProbeDroidExitEnd", now + 2)
             end
             probe.LastExitCommand = now
         elseif probe.ExitHoldStarted then
             probe.ExitHoldStarted, probe.LastExitCommand = nil, nil
             probe:SetNW2Float("ProbeDroidExitEnd", 0)
         end
-        if probe.ExitHoldStarted and now - probe.ExitHoldStarted >= 3 then
+        if probe.ExitHoldStarted and now - probe.ExitHoldStarted >= 2 then
             probe:DestroyProbe("flight ended by pilot")
         else
             local stealthDown = cmd:KeyDown(IN_ATTACK2)
@@ -160,6 +160,23 @@ if isfunction(_G.ProbeDroidNPCHeatCleanup) then _G.ProbeDroidNPCHeatCleanup() en
 local cameraSway = CreateClientConVar("probe_droid_camera_sway", "1", true, false,
     "Drone camera banking and flight sway strength (0 disables it).", 0, 1)
 local flightCamera
+local zoomLevels = {1, 3, 6}
+local function zoomFactor(probe)
+    return zoomLevels[probe.ClientZoomLevel or 1] or 1
+end
+hook.Add("PlayerBindPress", "ProbeDroid.Zoom", function(ply, bind, pressed)
+    local probe = controlledProbe(ply)
+    if not probe or string.lower(bind) ~= "+attack" then return end
+    if pressed then
+        probe.ClientZoomLevel = (probe.ClientZoomLevel or 1) % #zoomLevels + 1
+        surface.PlaySound("buttons/lightswitch2.wav")
+    end
+    return true
+end)
+hook.Add("AdjustMouseSensitivity", "ProbeDroid.Zoom", function()
+    local probe = controlledProbe(LocalPlayer())
+    if probe then return 1 / zoomFactor(probe) end
+end)
 hook.Add("CalcView", "ProbeDroid.FirstPerson", function(ply, _, _, fov)
     local probe = controlledProbe(ply)
     if not probe then flightCamera = nil return end
@@ -193,7 +210,8 @@ hook.Add("CalcView", "ProbeDroid.FirstPerson", function(ply, _, _, fov)
     return {
         origin = probe:GetCameraPosition(),
         angles = angles,
-        fov = fov,
+        -- Divide the projected image width for true optical magnification.
+        fov = math.deg(2 * math.atan(math.tan(math.rad(fov) * 0.5) / zoomFactor(probe))),
         znear = 2,
         drawviewer = true
     }
@@ -945,8 +963,8 @@ local function radar(x, y, radius, position, angles, home)
     text("H", hx + 7 * scale, hy - 6 * scale, "Small", white)
     line(x - 4 * scale, y + 4 * scale, x, y - 4 * scale, white)
     line(x, y - 4 * scale, x + 4 * scale, y + 4 * scale, white)
-    text(string.format("PROXIMITY / %.1f m", meters(RADAR_RANGE)), x - radius, y - radius - 24 * scale)
-    text(string.format("%02d RETURNS    H / UPLINK", #state.contacts), x, y + radius + 12 * scale, "Small", nil, TEXT_ALIGN_CENTER)
+    text(string.format("TARGETS DETECTED / %02d", #state.contacts), x - radius, y - radius - 24 * scale)
+    text("H / UPLINK", x, y + radius + 12 * scale, "Small", nil, TEXT_ALIGN_CENTER)
 end
 
 local function drawStealthIndicator(probe, w)
@@ -964,7 +982,7 @@ local function drawExitProgress(probe, w, h)
     if deadline == 0 then return end
     local s, cx, y = scale, w / 2, h / 2 + 139 * scale
     local remaining = math.max(0, deadline - CurTime())
-    local progress = math.Clamp(1 - remaining / 3, 0, 1)
+    local progress = math.Clamp(1 - remaining / 2, 0, 1)
     surface.SetDrawColor(backing)
     surface.DrawRect(cx - 160 * s, y, 320 * s, 64 * s)
     text(string.format("DEACTIVATING / %.1f s", remaining), cx, y + 8 * s,
@@ -977,6 +995,52 @@ local function drawExitProgress(probe, w, h)
 end
 
 local function installHUD(controlledProbe)
+    local vignette
+    local function vignetteMaterial()
+        if vignette then return vignette end
+        -- Build a radial alpha texture locally; no downloaded material needed.
+        -- Render once at small resolution, then let texture filtering smooth it.
+        local size = 128
+        local target = GetRenderTargetEx("ProbeDroidRadialVignetteV1", size, size,
+            RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 12, 0, IMAGE_FORMAT_RGBA8888)
+        render.PushRenderTarget(target)
+        render.OverrideAlphaWriteEnable(true, true)
+        render.Clear(0, 0, 0, 0, false, false)
+        render.OverrideBlend(true, BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD,
+            BLEND_ONE, BLEND_ZERO, BLENDFUNC_ADD)
+        cam.Start2D()
+        draw.NoTexture()
+        for y = 0, size - 1 do
+            local ny = 2 * y / (size - 1) - 1
+            for x = 0, size - 1 do
+                local nx = 2 * x / (size - 1) - 1
+                local fade = math.Clamp((math.sqrt(nx * nx + ny * ny) - 0.4) / 0.95, 0, 1)
+                surface.SetDrawColor(0, 0, 0, math.floor(255 * fade * fade * (3 - 2 * fade) + 0.5))
+                surface.DrawRect(x, y, 1, 1)
+            end
+        end
+        cam.End2D()
+        render.OverrideBlend(false)
+        render.OverrideAlphaWriteEnable(false)
+        render.PopRenderTarget()
+        vignette = CreateMaterial("ProbeDroidRadialVignetteMaterialV1", "UnlitGeneric", {
+            ["$basetexture"] = target:GetName(), ["$translucent"] = "1",
+            ["$vertexcolor"] = "1", ["$vertexalpha"] = "1"
+        })
+        return vignette
+    end
+    local vignetteProbe, vignetteAlpha
+    local function drawVignette(probe, w, h)
+        local material = vignetteMaterial()
+        local target = probe:GetStealth() and 235 or 125
+        if vignetteProbe ~= probe then
+            vignetteProbe, vignetteAlpha = probe, target
+        end
+        vignetteAlpha = Lerp(1 - math.exp(-FrameTime() * 7), vignetteAlpha, target)
+        surface.SetDrawColor(255, 255, 255, vignetteAlpha)
+        surface.SetMaterial(material)
+        surface.DrawTexturedRect(0, 0, w, h)
+    end
     local refreshRate = CreateClientConVar("probe_droid_hud_fps", "20", true, false,
         "Instrument refresh rate; the world and camera still render every frame.", 15, 60)
     local function renderHUD()
@@ -1036,7 +1100,7 @@ local function installHUD(controlledProbe)
         text(sensor,
             w - 46 * s, 57 * s, "Small", white, TEXT_ALIGN_RIGHT)
         if not probe:GetStealth() then
-            text("STEALTH OFF [M2]", cx, 79 * s, "Small", dim, TEXT_ALIGN_CENTER)
+            text("STEALTH OFF", cx, 79 * s, "Small", dim, TEXT_ALIGN_CENTER)
         end
         compass(w, angles.y)
 
@@ -1086,6 +1150,7 @@ local function installHUD(controlledProbe)
         drawGraphic(reticle, cx - 160 * s, cy - 100 * s)
         local trace = state.trace
         local target = trace and trace.Hit and position:Distance(trace.HitPos)
+        text(string.format("ZOOM %dx", zoomFactor(probe)), cx, cy - 120 * s, "Small", white, TEXT_ALIGN_CENTER)
         text(target and string.format("RNG %.1f m", meters(target)) or "RNG --- m", cx, cy + 109 * s, "Small", white, TEXT_ALIGN_CENTER)
         if trace and IsValid(trace.Entity) and (trace.Entity:IsNPC() or trace.Entity:IsPlayer()) then
             local screen = trace.Entity:WorldSpaceCenter():ToScreen()
@@ -1128,10 +1193,10 @@ local function installHUD(controlledProbe)
         meter(px + 12 * s, ty + 110 * s, pw - 24 * s, signal, signalColor)
         text(string.format("UPLINK %.1f / %.1f m", meters(distance), meters(range)), px + 12 * s, ty + 134 * s, "Text", white)
         if layout.compact then
-            text("WASD / FLY   SPACE CTRL / ALT", cx, h - 48 * s, "Small", nil, TEXT_ALIGN_CENTER)
-            text("SHIFT BOOST  R IR  N NV  M2 STEALTH  HOLD E 3s EXIT", cx, h - 28 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("WASD / FLY | SPACE CTRL / ALT", cx, h - 48 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | HOLD E 2s EXIT", cx, h - 28 * s, "Small", nil, TEXT_ALIGN_CENTER)
         else
-            text("WASD FLY   SPACE CTRL ALT   SHIFT BOOST   R IR   N NV   M2 STEALTH   HOLD E 3s EXIT", cx, h - 42 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("WASD FLY | SPACE CTRL ALT | SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | HOLD E 2s EXIT", cx, h - 42 * s, "Small", nil, TEXT_ALIGN_CENTER)
         end
         if battery < 0.2 or signal < 0.2 then
             local warning = battery < 0.2 and "POWER CORE DEPLETING" or "TRANSMISSION LIMIT"
@@ -1146,6 +1211,8 @@ local function installHUD(controlledProbe)
         local probe = controlledProbe(LocalPlayer())
         if not probe then lastProbe = nil state.probe = nil return end
         local w, h = ScrW(), ScrH()
+        -- Shade the world before drawing instruments, outside the cached HUD.
+        drawVignette(probe, w, h)
         local mode = thermalVision:GetBool() and 1 or nightVision:GetBool() and 2 or 0
         if not cached or cached.width ~= w or cached.height ~= h then
             -- Warm the small instrument textures before entering the outer RT.

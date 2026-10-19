@@ -1,6 +1,6 @@
 # Live debugger test results
 
-Manual exit now requires a continuous three-second hold of E, with a countdown
+Manual exit now requires a continuous two-second hold of E, with a countdown
 and release-to-cancel behavior. Local input regression checks pass; the historical
 instant-exit result below predates this change.
 

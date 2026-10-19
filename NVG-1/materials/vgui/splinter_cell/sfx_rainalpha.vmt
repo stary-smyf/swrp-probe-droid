@@ -1,0 +1,19 @@
+UnlitGeneric
+{
+	$basetexture "vgui/splinter_cell/SFX_RainAlpha_full"
+	$alphatest 	1
+	$vertexalpha  1
+	$vertexcolor   1
+//	$additive     1
+	$color2	"[.5 .5 .5]"
+
+"Proxies"
+    {
+        "TextureScroll"
+        {
+            "texturescrollvar" "$basetexturetransform"
+            "texturescrollrate" 5
+            "texturescrollangle" 90
+        }
+    }
+}

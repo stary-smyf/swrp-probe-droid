@@ -51,4 +51,59 @@ assert(creates == 2, "negligible velocity jitter blocks stationary player")
 env.CLIENT = true
 weapon:PrimaryAttack()
 assert(creates == 2, "client attempted server entity creation")
-print("Deployment checks passed: stationary ground requirement, movement, falling, jump apex and noclip")
+-- Complete deployment too: an error after Spawn leaves an unpiloted entity
+-- that destroys itself on its first Think. Syntax checks cannot catch API typos.
+env.CLIENT = false
+local vectorMeta = {}
+local function vector(x, y, z)
+    return setmetatable({x = x, y = y, z = z}, vectorMeta)
+end
+function vectorMeta.__add(a, b) return vector(a.x + b.x, a.y + b.y, a.z + b.z) end
+function vectorMeta.__sub(a, b) return vector(a.x - b.x, a.y - b.y, a.z - b.z) end
+function vectorMeta.__mul(a, b) return vector(a.x * b, a.y * b, a.z * b) end
+env.Vector, env.vector_origin = vector, vector(0, 0, 0)
+env.Angle = function(p, y, r) return {p = p, y = y, r = r} end
+function player:EyePos() return vector(0, 0, 64) end
+function player:EyeAngles() return env.Angle(0, 0, 0) end
+function player:GetAimVector() return vector(1, 0, 0) end
+function weapon:SetHoldType(value) self.holdType = value end
+weapon:Initialize()
+assert(weapon.holdType == "slam" and env.SWEP.UseHands, "controller initialization broke")
+local spawned, blocked = nil, false
+env.ents.Create = function()
+    spawned = {valid = true}
+    function spawned:SetPos(pos) self.pos = pos end
+    function spawned:SetAngles() end
+    function spawned:Spawn()
+        self.HullMins, self.HullMaxs = vector(-20, -20, 0), vector(20, 20, 60)
+    end
+    function spawned:BeginControl(ply, controller)
+        assert(self.pos.x == 100 and self.pos.z == 34, "incorrect deployment position")
+        self.pilot, self.ControlWeapon = ply, controller
+        ply.probe = self
+    end
+    function spawned:EmitSound(path)
+        assert(self.pilot == player, "deployment sound played before control began")
+        assert(path == "npc/roller/mine/rmine_blades_out1.wav")
+        self.soundPlayed = true
+    end
+    function spawned:Remove() self.valid = false end
+    return spawned
+end
+env.util = {TraceHull = function(trace)
+    assert(trace.mins == spawned.HullMins and trace.maxs == spawned.HullMaxs)
+    assert(trace.filter[1] == player and trace.filter[2] == spawned)
+    return {StartSolid = blocked, Fraction = blocked and 0 or 1, HitPos = trace.endpos}
+end}
+weapon:PrimaryAttack()
+assert(spawned.pilot == player and spawned.ControlWeapon == weapon and spawned.soundPlayed,
+    "spawned drone did not finish deployment")
+assert(weapon:Holster() == false, "pilot can holster controller in flight")
+player.probe, blocked = nil, true
+function player:ChatPrint(message)
+    assert(message == "Not enough room to deploy the probe. Aim at an open area.")
+end
+weapon:PrimaryAttack()
+assert(not spawned.valid and not spawned.pilot and not spawned.soundPlayed,
+    "obstructed deployment left a drone active")
+print("Deployment checks passed: stationary ground, complete spawn/control, controller initialization and obstructed launch cleanup")

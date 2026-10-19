@@ -1,0 +1,27 @@
+"VertexLitGeneric"
+{
+//	"$additive" 1
+//	"$translucent" 1
+//	"$vertexcolor" 1
+//	"$vertexalpha" 1
+//	"$decal" 1
+//	"$color2"		"[1 1 1]"
+//	"$alpha" 1	
+
+	"$basetexture" "effects\splinter_cell\thermal_noise"
+//	"$detail"	"effects\splinter_cell\thermal_noise"
+	"$detailscale"	1
+	"$detailblendmode"	5
+	"$detailblendfactor"	20
+
+        "Proxies"
+        {
+                "AnimatedTexture"
+                {
+                         "animatedtexturevar" "$basetexture"
+                         "animatedtextureframenumvar" "$frame"
+                         "animatedtextureframerate" 60.00
+                }
+
+        }
+}

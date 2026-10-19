@@ -1,0 +1,17 @@
+"VertexlitGeneric"
+{
+	"$additive" 0
+	"$translucent" 0
+	"$vertexcolor" 1
+//	"$vertexalpha" 1
+	"$decal" 0
+	"$nocull"	0
+	"$basetexture" "effects\splinter_cell\orgsen_overlay"
+	"$detail"	"effects\splinter_cell\orgsen_overlay"
+	"$detailscale"	.23
+	"$detailblendmode"	5
+	"$detailblendfactor"	150
+	
+
+
+}

@@ -3,8 +3,8 @@ if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Probe Droid Controller"
 SWEP.Author = "Probe Droid"
-SWEP.Instructions = "Stand still on the ground and left click to deploy a probe droid. Right click toggles stealth in flight. Hold E for 3 seconds to end flight."
-SWEP.Category = "Star Wars"
+SWEP.Instructions = "Stand still on the ground and left click to deploy a probe droid. In flight, left click cycles 1x/3x/6x zoom and right click toggles stealth. Hold E for 2 seconds to end flight."
+SWEP.Category = "Star Wars Gadgets"
 SWEP.IconOverride = "entities/weapon_probe_droid.png"
 SWEP.Spawnable = true
 SWEP.AdminOnly = false
@@ -71,7 +71,7 @@ function SWEP:PrimaryAttack()
     end
     probe:SetPos(trace.HitPos - (trace.Hit and ply:GetAimVector() * 2 or vector_origin))
     probe:BeginControl(ply, self)
-    self:EmitSound("buttons/button14.wav")
+    probe:EmitSound("npc/roller/mine/rmine_blades_out1.wav", 75, 100, 0.8)
 end
 
 function SWEP:SecondaryAttack() end

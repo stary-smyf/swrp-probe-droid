@@ -1,0 +1,5 @@
+UnlitGeneric
+{
+	$basetexture vgui/splinter_cell/nvg_edges
+	$translucent 1
+}
