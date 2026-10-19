@@ -1,0 +1,6 @@
+{
+  "title": "Controllable Probe Droid",
+  "type": "weapon",
+  "tags": ["fun", "roleplay"],
+  "ignore": ["README.md", "LIVE_TEST_RESULTS.md", "artifacts/*", "screenshots/*", "tests/*", ".git/*"]
+}
