@@ -39,11 +39,11 @@ setfenv(chunk, env)
 local drawVignette = chunk()
 local probe = {stealth = false, GetStealth = function(self) return self.stealth end}
 drawVignette(probe, 1920, 1080)
-assert(alpha == 125 and pixels[64 * 128 + 64] == 0, "normal vignette obscures center")
+assert(alpha == 170 and pixels[64 * 128 + 64] == 0, "normal vignette obscures center")
 assert(pixels[0] == 255 and pixels[64] > 0 and pixels[64] < 255, "radial edge falloff missing")
 assert(pixels[64] == pixels[64 * 128], "gradient is not radially symmetric")
 probe.stealth = true
 for _ = 1, 90 do drawVignette(probe, 1920, 1080) end
-assert(alpha > 234 and alpha <= 235, "stealth did not strengthen vignette")
+assert(alpha > 254 and alpha <= 255, "stealth did not strengthen vignette")
 assert(builds == 1 and draws == 91, "texture was rebuilt each frame")
 print("Vignette checks passed: local texture generation, radial alpha, transparent center, caching and stealth fade")

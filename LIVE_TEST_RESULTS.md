@@ -1,5 +1,10 @@
 # Live debugger test results
 
+Night vision now uses the supplied Splinter Cell NVG Night preset. Local checks
+cover its green static, bloom, adaptation, projected illuminator and cleanup.
+This replacement has not yet been verified live; older night-vision captures and
+performance notes below describe the previous implementation.
+
 The thermal renderer has been replaced with the supplied Splinter Cell NVG
 Thermal preset. Its local regression checks pass, but the new effect has not
 been verified live. Thermal screenshots, timings, and rendering observations

@@ -60,9 +60,8 @@ return function(controlledProbe, thermalVision)
         if tonumber(value) == 0 then cleanup() end
     end, "ProbeDroid.ThermalCleanup")
     local function activeProbe()
-        if not thermalVision:GetBool() then return end
         local probe = controlledProbe(LocalPlayer())
-        if not probe then return end
+        if not probe or not thermalVision:GetBool() then return end
         -- Never cover the view with an error material if downloads are missing.
         if heat:IsError() or lookup:IsError() or noise:IsError() then
             if not warned then

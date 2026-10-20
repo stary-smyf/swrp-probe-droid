@@ -17,7 +17,8 @@ The tests load the actual addon functions with deterministic engine API mocks:
 - `deployment_test.lua` checks stationary grounded deployment and rejects motion,
   airborne players (including the jump apex), ladders, and noclip before spawning.
 - `zoom_test.lua` checks LMB zoom cycling, release handling, optical magnification,
-  aiming sensitivity, new-flight reset, and normal controls outside a flight.
+  aiming sensitivity, stereo audio, full-clip input cooldown, asynchronous loading,
+  stale audio callbacks, new-flight reset, and normal controls outside a flight.
 - `exit_hold_test.lua` checks the two-second exit hold through client/server
   input, release cancellation, interrupted input, stale commands, and new flights.
 - `npc_targeting_test.lua` checks hostile/friendly targeting, visibility, stealth
@@ -28,6 +29,11 @@ The tests load the actual addon functions with deterministic engine API mocks:
   model opacity, draw passes, and blend restoration.
 - `sensor_battery_test.lua` checks thermal/night-vision drain, combined stealth
   costs, transition accounting, and sensor synchronization for the current pilot.
+- `sensor_reset_test.lua` checks optical defaults on every deployment before
+  rendering/battery sync, while preserving sensor toggles during a flight.
+- `nightvision_test.lua` checks the imported NVG Night preset, bloom order, light
+  adaptation, red static, drone illuminator, thermal exclusion, cleanup and
+  a red fallback when the static material is missing.
 - `hud_scan_test.lua` checks per-refresh trace limits, cadence, coherent sample
   positions, invalid contacts, flight resets, and completion at low frame rates.
 - `thermal_test.lua` checks the replacement Splinter Cell NVG preset's processing

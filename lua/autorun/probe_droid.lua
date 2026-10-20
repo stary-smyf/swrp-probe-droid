@@ -2,11 +2,13 @@ if SERVER then
     AddCSLuaFile()
     AddCSLuaFile("autorun/client/probe_droid_audio.lua")
     AddCSLuaFile("probe_droid/thermal.lua")
+    AddCSLuaFile("probe_droid/nightvision.lua")
+    resource.AddFile("materials/probe_droid/nightvision/grain.vmt")
     for _, name in ipairs({"heat.vmt", "heat.vtf", "lookup.vmt", "lookup.vtf", "noise.vmt", "noise.vtf"}) do
         resource.AddFile("materials/probe_droid/thermal/" .. name)
     end
     resource.AddFile("materials/entities/weapon_probe_droid.png")
-    for _, name in ipairs({"probedroidhover.wav", "probedroidspeak1.wav",
+    for _, name in ipairs({"camerazoom.wav", "unzoom_loud.wav", "probedroidhover.wav", "probedroidspeak1.wav",
         "probedroidspeak2.wav", "probedroidspeak3.wav"}) do
         resource.AddFile("sound/probe_droid/" .. name)
     end
@@ -39,6 +41,12 @@ local function controlledProbe(ply)
     if IsValid(probe) and probe:GetClass() == "sent_probe_droid"
         and isfunction(probe.GetCameraPosition) and isfunction(probe.GetCameraOffset)
         and isfunction(probe.GetPilot) and probe:GetPilot() == ply then
+        if CLIENT and not probe.ClientSensorsInitialized then
+            probe.ClientSensorsInitialized = true
+            -- Reset immediately, before camera/effect hooks read archived modes.
+            GetConVar("probe_droid_thermal"):SetBool(false)
+            GetConVar("probe_droid_nightvision"):SetBool(false)
+        end
         return probe
     end
 end
@@ -164,6 +172,14 @@ if isfunction(_G.ProbeDroidNPCHeatCleanup) then _G.ProbeDroidNPCHeatCleanup() en
 local cameraSway = CreateClientConVar("probe_droid_camera_sway", "1", true, false,
     "Drone camera banking and flight sway strength (0 disables it).", 0, 1)
 local flightCamera
+local zoomSound
+local zoomSoundProbe, zoomLoading, nextZoomAt = nil, false, 0
+local zoomGeneration = 0
+local function stopZoomSound()
+    zoomGeneration = zoomGeneration + 1
+    if IsValid(zoomSound) then zoomSound:Stop() end
+    zoomSound, zoomSoundProbe, zoomLoading, nextZoomAt = nil, nil, false, 0
+end
 local zoomLevels = {1, 3, 6}
 local function zoomFactor(probe)
     return zoomLevels[probe.ClientZoomLevel or 1] or 1
@@ -172,8 +188,37 @@ hook.Add("PlayerBindPress", "ProbeDroid.Zoom", function(ply, bind, pressed)
     local probe = controlledProbe(ply)
     if not probe or string.lower(bind) ~= "+attack" then return end
     if pressed then
+        if zoomSoundProbe ~= probe then
+            stopZoomSound()
+            zoomSoundProbe = probe
+        end
+        if zoomLoading or RealTime() < nextZoomAt then return true end
+        if IsValid(zoomSound) then zoomSound:Stop() end
         probe.ClientZoomLevel = (probe.ClientZoomLevel or 1) % #zoomLevels + 1
-        surface.PlaySound("buttons/lightswitch2.wav")
+        local zoomFile = probe.ClientZoomLevel == 1 and "sound/probe_droid/unzoom_loud.wav"
+            or "sound/probe_droid/camerazoom.wav"
+        -- Use the same stereo-capable 2D playback as the drone's other WAVs.
+        -- Block another zoom until loading and the entire cue have finished.
+        zoomLoading = true
+        zoomGeneration = zoomGeneration + 1
+        local generation = zoomGeneration
+        sound.PlayFile(zoomFile, "noplay", function(channel, errorID, errorName)
+            if generation ~= zoomGeneration or controlledProbe(LocalPlayer()) ~= probe then
+                if IsValid(channel) then channel:Stop() end
+                return
+            end
+            zoomLoading = false
+            if not IsValid(channel) then
+                nextZoomAt = RealTime() + 0.25
+                ErrorNoHalt("[Probe Droid zoom audio] " .. tostring(errorName or errorID) .. "\n")
+                return
+            end
+            zoomSound = channel
+            channel:EnableLooping(false)
+            channel:SetVolume(1)
+            nextZoomAt = RealTime() + math.max(channel:GetLength(), 0.05) + 0.05
+            channel:Play()
+        end)
     end
     return true
 end)
@@ -183,7 +228,11 @@ hook.Add("AdjustMouseSensitivity", "ProbeDroid.Zoom", function()
 end)
 hook.Add("CalcView", "ProbeDroid.FirstPerson", function(ply, _, _, fov)
     local probe = controlledProbe(ply)
-    if not probe then flightCamera = nil return end
+    if not probe then
+        flightCamera = nil
+        if zoomSoundProbe then stopZoomSound() end
+        return
+    end
     local steering = probe.ClientViewAngles or ply:EyeAngles()
     local angles = Angle(steering.p, steering.y, 0)
     if not flightCamera or flightCamera.probe ~= probe then
@@ -224,9 +273,9 @@ end)
 local thermalVision = CreateClientConVar("probe_droid_thermal", "0", true, false,
     "Enable Splinter Cell NVG thermal vision while piloting a probe droid.")
 local nightVision = CreateClientConVar("probe_droid_nightvision", "0", true, false,
-    "Enable green low-light night vision while piloting a probe droid.")
+    "Enable Splinter Cell NVG night vision while piloting a probe droid.")
 local nightLight = CreateClientConVar("probe_droid_nightvision_light", "1", true, false,
-    "Enable the short-range night-vision illuminator (disable to save GPU work).")
+    "Enable the NVG projected illuminator (disable to save GPU work).")
 
 do
     local lastProbe, lastMode
@@ -264,66 +313,21 @@ local function toggleNightVision()
 end
 concommand.Add("probe_droid_toggle_nightvision", toggleNightVision)
 
-local function tintSensorImage(r, g, b)
-    -- Multiply the existing image directly instead of copying and sampling
-    -- the full framebuffer again. Keep its alpha unchanged for other effects.
-    cam.Start2D()
-    render.OverrideBlend(true, BLEND_ZERO, BLEND_SRC_COLOR, BLENDFUNC_ADD,
-        BLEND_ZERO, BLEND_ONE, BLENDFUNC_ADD)
-    draw.NoTexture()
-    surface.SetDrawColor(r, g, b, 255)
-    surface.DrawRect(0, 0, ScrW(), ScrH())
-    render.OverrideBlend(false)
-    cam.End2D()
-end
-
 do
-    local wasDown, hadLight, lightKey, nextLight = false, false, 0, 0
+    local wasDown = false
     hook.Add("Think", "ProbeDroid.NightVisionInput", function()
         local down = input.IsKeyDown(KEY_N)
-        local ply = LocalPlayer()
-        local probe = controlledProbe(ply)
+        local probe = controlledProbe(LocalPlayer())
         if probe and down and not wasDown and not vgui.CursorVisible()
             and not IsValid(vgui.GetKeyboardFocus()) and not gui.IsConsoleVisible()
             and not gui.IsGameUIVisible() then
             toggleNightVision()
         end
         wasDown = down
-        if probe and nightVision:GetBool() and not thermalVision:GetBool() and nightLight:GetBool() then
-            if RealTime() < nextLight then return end
-            nextLight = RealTime() + 0.05
-            lightKey = 524288 + ply:EntIndex()
-            local light = DynamicLight(lightKey)
-            if light then
-                light.pos = probe:GetCameraPosition()
-                light.r, light.g, light.b = 210, 255, 210
-                light.brightness, light.decay, light.size = 1.5, 0, 384
-                light.nomodel = true
-                light.dietime = CurTime() + 0.15
-                hadLight = true
-            end
-        elseif hadLight then
-            -- Reacquire the light by ID rather than retaining a reusable dlight.
-            local light = DynamicLight(lightKey)
-            if light then
-                light.brightness, light.size, light.dietime = 0, 0, CurTime() + 0.001
-            end
-            hadLight = false
-        end
-    end)
-
-    local palette = {
-        ["$pp_colour_addr"] = 0, ["$pp_colour_addg"] = 0, ["$pp_colour_addb"] = 0,
-        ["$pp_colour_brightness"] = 0.015, ["$pp_colour_contrast"] = 1.3,
-        ["$pp_colour_colour"] = 0, ["$pp_colour_mulr"] = 0,
-        ["$pp_colour_mulg"] = 0, ["$pp_colour_mulb"] = 0
-    }
-    hook.Add("RenderScreenspaceEffects", "ProbeDroid.NightVision", function()
-        if not nightVision:GetBool() or thermalVision:GetBool() or not controlledProbe(LocalPlayer()) then return end
-        DrawColorModify(palette)
-        tintSensorImage(255, 0, 0)
     end)
 end
+
+include("probe_droid/nightvision.lua")(controlledProbe, nightVision, thermalVision, nightLight)
 
 do
     local stealthBlur
@@ -726,7 +730,7 @@ local function installHUD(controlledProbe)
             local ny = 2 * y / (size - 1) - 1
             for x = 0, size - 1 do
                 local nx = 2 * x / (size - 1) - 1
-                local fade = math.Clamp((math.sqrt(nx * nx + ny * ny) - 0.4) / 0.95, 0, 1)
+                local fade = math.Clamp((math.sqrt(nx * nx + ny * ny) - 0.35) / 0.8, 0, 1)
                 surface.SetDrawColor(0, 0, 0, math.floor(255 * fade * fade * (3 - 2 * fade) + 0.5))
                 surface.DrawRect(x, y, 1, 1)
             end
@@ -744,7 +748,7 @@ local function installHUD(controlledProbe)
     local vignetteProbe, vignetteAlpha
     local function drawVignette(probe, w, h)
         local material = vignetteMaterial()
-        local target = probe:GetStealth() and 235 or 125
+        local target = probe:GetStealth() and 255 or 170
         if vignetteProbe ~= probe then
             vignetteProbe, vignetteAlpha = probe, target
         end

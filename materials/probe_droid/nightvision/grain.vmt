@@ -1,0 +1,17 @@
+"Modulate"
+{
+    "$basetexture" "probe_droid/nightvision/grain"
+    "$basetexturetransform" "center .5 .5 scale 6 8 rotate 0 translate 0 0"
+    "$mod2x" "1"
+    "$vertexalpha" "1"
+    "$vertexcolor" "1"
+    "Proxies"
+    {
+        "AnimatedTexture"
+        {
+            "animatedtexturevar" "$basetexture"
+            "animatedtextureframenumvar" "$frame"
+            "animatedtextureframerate" "60"
+        }
+    }
+}

@@ -16,3 +16,12 @@ The bloom, colour correction, lookup, motion blur, noise, and illuminator settin
 come from that preset. The goggles framework, player-model restrictions, key
 bindings, lens animations, and sounds are not installed or activated.
 
+Night vision adapts the **Night** preset (goggle 1) from the same supplied
+SplinterCellNVG loadout. Its two bloom passes, colour correction, light adaptation,
+static overlay and projected illuminator settings replace the former probe
+night-vision effect, with the tint changed to red. `materials/probe_droid/nightvision/grain.vtf` is the supplied
+`vgui/splinter_cell/noise.vtf`; `grain.vmt` adapts
+`effects/splinter_cell/scct_green_static.vmt` to the probe material namespace.
+The probe keeps its own N toggle, vignette and HUD instead of the goggles lens
+animations, player-model restrictions or framework bindings.
+

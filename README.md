@@ -38,6 +38,9 @@ other players. Holding E shows an exit countdown and progress bar; releasing
 it before two seconds cancels the exit.
 Zoom starts at 1x for each flight. The HUD shows the current magnification;
 mouse sensitivity scales down at 3x and 6x for precise aiming.
+Zooming in plays `camerazoom.wav`; returning from 6x to 1x plays `unzoom.wav`.
+Further zoom clicks are ignored until the complete sound finishes, preventing
+overlap or interruption.
 Flight accelerates smoothly and glides briefly when you release movement;
 reverse thrust brakes the drift. The first-person camera banks and sways with
 motion. Set `probe_droid_camera_sway 0` to disable camera movement, or choose a
@@ -95,7 +98,9 @@ vehicles and weapons retain their scene materials. Models use the normal engine
 rendering path and occlusion rather than an extra through-wall heat pass.
 A broad client-only illuminator follows the drone camera, including when zoomed.
 Entity materials, colours and render modes are restored when thermal mode or
-flight ends, and the illuminator is removed. Your preferred mode is remembered.
+flight ends, and the illuminator is removed. Every deployment starts in optical
+view, with thermal and night vision off. Press R or N to enable either sensor
+during that flight.
 Turning thermal off immediately restores character materials, colours and render
 modes. Loading the renderer also clears heat materials left by older versions.
 You can also set `probe_droid_thermal 1` or `0` in the client console. Thermal
@@ -106,14 +111,18 @@ this update so they receive the new materials. Source attribution is recorded in
 `THIRD_PARTY_NOTICES.md`. The new effect still needs live visual verification;
 historical thermal screenshots and performance results describe the old renderer.
 
-Press N to toggle night vision. Image gain and a short-range, client-only
-illuminator help reveal unlit surroundings. Thermal and night vision disable
-each other; switching off the selected mode returns to optical view. Night
-vision and its illuminator stop when drone control ends. Use
+Press N to toggle the Splinter Cell NVG **Night** preset with red animated static,
+two bloom passes, grayscale contrast and smooth adaptation to light at the drone
+camera. A client-only projected illuminator uses the preset's 140-degree
+horizontal / 100-degree vertical field, brightness 2 and 2500-unit reach.
+Thermal and night vision disable each other; switching off the selected mode
+returns to optical view. Night vision and its illuminator stop when drone control
+ends, and each new flight starts in optical mode. Use
 `probe_droid_nightvision 1` or `0` to set the preference, or bind another key to
 `probe_droid_toggle_nightvision`. N is ignored while typing or using menus.
-The illuminator uses a small world-only light, updated at 20 Hz. Set
-`probe_droid_nightvision_light 0` to disable it while retaining the image filter.
+Set `probe_droid_nightvision_light 0` to disable the projected illuminator while
+retaining the image filter. The NVG framework is not required separately; the
+needed static texture is included in `materials/probe_droid/nightvision/`.
 
 The optical HUD includes an amber reticle, heading compass, pitch scale, flight
 telemetry, battery/signal meters, and a live surface-depth profile. Its proximity
