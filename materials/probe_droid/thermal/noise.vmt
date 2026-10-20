@@ -1,0 +1,18 @@
+"UnlitGeneric"
+{
+    "$additive" "1"
+    "$translucent" "1"
+    "$vertexcolor" "1"
+    "$vertexalpha" "1"
+    "$basetexturetransform" "center .5 .5 scale 6 8 rotate 0 translate 0 0"
+    "$basetexture" "probe_droid/thermal/noise"
+    "Proxies"
+    {
+        "AnimatedTexture"
+        {
+            "animatedtexturevar" "$basetexture"
+            "animatedtextureframenumvar" "$frame"
+            "animatedtextureframerate" "45"
+        }
+    }
+}

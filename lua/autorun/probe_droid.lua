@@ -1,6 +1,10 @@
 if SERVER then
     AddCSLuaFile()
     AddCSLuaFile("autorun/client/probe_droid_audio.lua")
+    AddCSLuaFile("probe_droid/thermal.lua")
+    for _, name in ipairs({"heat.vmt", "heat.vtf", "lookup.vmt", "lookup.vtf", "noise.vmt", "noise.vtf"}) do
+        resource.AddFile("materials/probe_droid/thermal/" .. name)
+    end
     resource.AddFile("materials/entities/weapon_probe_droid.png")
     for _, name in ipairs({"probedroidhover.wav", "probedroidspeak1.wav",
         "probedroidspeak2.wav", "probedroidspeak3.wav"}) do
@@ -218,7 +222,7 @@ hook.Add("CalcView", "ProbeDroid.FirstPerson", function(ply, _, _, fov)
 end)
 
 local thermalVision = CreateClientConVar("probe_droid_thermal", "0", true, false,
-    "Enable red-hot thermovision while piloting a probe droid.")
+    "Enable Splinter Cell NVG thermal vision while piloting a probe droid.")
 local nightVision = CreateClientConVar("probe_droid_nightvision", "0", true, false,
     "Enable green low-light night vision while piloting a probe droid.")
 local nightLight = CreateClientConVar("probe_droid_nightvision_light", "1", true, false,
@@ -343,299 +347,7 @@ hook.Add("PlayerBindPress", "ProbeDroid.ToggleThermal", function(ply, bind, pres
     return true
 end)
 
-do
-    local coldPalette = {
-        ["$pp_colour_addr"] = 0.025, ["$pp_colour_addg"] = 0, ["$pp_colour_addb"] = 0,
-        ["$pp_colour_brightness"] = -0.06, ["$pp_colour_contrast"] = 0.9,
-        ["$pp_colour_colour"] = 0, ["$pp_colour_mulr"] = 0,
-        ["$pp_colour_mulg"] = 0, ["$pp_colour_mulb"] = 0
-    }
-    local heatMaterial
-    local function getHeatMaterial()
-        if heatMaterial then return heatMaterial end
-        -- Small, once-generated noise texture gives surfaces a mottled IR grain.
-        local target = GetRenderTargetEx("ProbeDroidHeatGrainFast", 64, 64,
-            RT_SIZE_LITERAL, MATERIAL_RT_DEPTH_NONE, 0, 0, IMAGE_FORMAT_RGBA8888)
-        render.PushRenderTarget(target)
-        render.OverrideAlphaWriteEnable(true, true)
-        render.Clear(255, 255, 255, 255, false, false)
-        cam.Start2D()
-        for y = 0, 31 do
-            for x = 0, 31 do
-                local value = 155 + ((x * 73 + y * 151 + x * y * 17) % 101)
-                surface.SetDrawColor(255, value, math.max(0, (value - 195) * 4), 255)
-                surface.DrawRect(x * 2, y * 2, 2, 2)
-            end
-        end
-        cam.End2D()
-        render.OverrideAlphaWriteEnable(false)
-        render.PopRenderTarget()
-        heatMaterial = CreateMaterial("ProbeDroidHeatSurfaceFast", "UnlitGeneric", {
-            ["$basetexture"] = target:GetName(), ["$model"] = "1",
-            ["$nodecal"] = "1", ["$nofog"] = "1"
-        })
-        return heatMaterial
-    end
-
-    local candidates, nextScan, lastProbe = {}, 0, nil
-    local drawErrors = setmetatable({}, {__mode = "k"})
-    local npcMaskFrame = -1
-    local wrappedNPCs = {}
-    local installedCandidates, maskActive, maskOrigin, maskRangeSquared
-    local nativeDrawModel = FindMetaTable("Entity").DrawModel
-    local heatDrawFlags = bit.bor(STUDIO_RENDER, STUDIO_NOSHADOWS,
-        STUDIO_SKIP_FLEXES or 0, STUDIO_SKIP_DECALS or 0)
-    local depthDrawFlags = bit.bor(STUDIO_SHADOWDEPTHTEXTURE or 0, STUDIO_SSAODEPTHTEXTURE or 0)
-    local function opaqueNativeNPC(ent, record)
-        if not record or record.custom or ent.RenderOverride ~= record.wrapper then return false end
-        -- A missing engine draw is normally visibility/occlusion culling. Do
-        -- not submit that model again in Lua and undo the engine's decision.
-        -- BOTH/translucent renderers still need the compatibility fallback.
-        local group = ent:GetRenderGroup()
-        return group == RENDERGROUP_OPAQUE or group == RENDERGROUP_OPAQUE_HUGE
-    end
-    local function visibleWeapon(ent)
-        local owner = ent:GetOwner()
-        -- Inventory weapons can have a model and GetNoDraw() == false even
-        -- though the engine hides their world model. Do not redraw the backpack.
-        return not IsValid(owner)
-            or not (owner:IsPlayer() or owner:IsNPC() or owner:IsNextBot())
-            or not isfunction(owner.GetActiveWeapon)
-            or owner:GetActiveWeapon() == ent
-    end
-    local function thermalTarget(ent, probe)
-        if not IsValid(ent) or ent:IsDormant() or ent:GetNoDraw() then return false end
-        if ent == probe or ent:IsWorld() then return false end
-        local class = ent:GetClass()
-        -- Source vehicles use prop_vehicle_* classes; keep them hot while
-        -- ordinary physics/dynamic props remain part of the cold environment.
-        if (string.sub(class, 1, 5) == "prop_" and not ent:IsVehicle())
-            or class == "gmod_cameraprop" or class == "predicted_viewmodel"
-            or class == "viewmodel" or class == "gmod_hands" then return false end
-        -- Brush geometry and invisible logic entities have no heat silhouette.
-        local model = ent:GetModel()
-        if not model or string.sub(string.lower(model), -4) ~= ".mdl" then return false end
-        if ent:IsPlayer() then return ent:Alive() end
-        return true
-    end
-
-    local function scanTargets(probe)
-        if probe == lastProbe and CurTime() < nextScan then return end
-        candidates = {}
-        for _, ent in ipairs(ents.GetAll()) do
-            if thermalTarget(ent, probe) then
-                candidates[#candidates + 1] = {entity = ent,
-                    radius = ent:BoundingRadius(), draw = ent.DrawModel,
-                    weapon = ent:IsWeapon(), npc = ent:IsNPC() or ent:IsNextBot()}
-            end
-        end
-        nextScan, lastProbe = CurTime() + 0.5, probe
-    end
-
-    local function restoreNPCs()
-        for ent, saved in pairs(wrappedNPCs) do
-            if IsValid(ent) then
-                if ent.RenderOverride == saved.wrapper then
-                    ent.RenderOverride = saved.previous
-                end
-            end
-        end
-        table.Empty(wrappedNPCs)
-        installedCandidates, maskActive = nil, false
-    end
-    _G.ProbeDroidNPCHeatCleanup = restoreNPCs
-
-    -- Write only the high stencil bit, leaving the remaining bits available.
-    local function stencilWriter(reference)
-        render.SetStencilEnable(true)
-        render.SetStencilWriteMask(128)
-        render.SetStencilTestMask(128)
-        render.SetStencilReferenceValue(reference)
-        render.SetStencilCompareFunction(STENCIL_ALWAYS)
-        render.SetStencilPassOperation(STENCIL_REPLACE)
-        render.SetStencilFailOperation(STENCIL_KEEP)
-        render.SetStencilZFailOperation(STENCIL_KEEP)
-    end
-    local function endStencil()
-        render.SetStencilEnable(false)
-        render.SetStencilWriteMask(255)
-        render.SetStencilTestMask(255)
-        render.SetStencilReferenceValue(0)
-        render.SetStencilCompareFunction(STENCIL_ALWAYS)
-        render.SetStencilPassOperation(STENCIL_KEEP)
-        render.SetStencilFailOperation(STENCIL_KEEP)
-        render.SetStencilZFailOperation(STENCIL_KEEP)
-    end
-
-    hook.Add("PreDrawOpaqueRenderables", "ProbeDroid.NPCHeatMask", function(depth, sky)
-        if depth or sky then maskActive = false return end
-        npcMaskFrame = -1
-        if not thermalVision:GetBool() then
-            if installedCandidates then restoreNPCs() end
-            return
-        end
-        local probe = controlledProbe(LocalPlayer())
-        if not probe then
-            if installedCandidates then restoreNPCs() end
-            return
-        end
-        scanTargets(probe)
-        getHeatMaterial()
-        local view = render.GetViewSetup(true)
-        local origin = view.origin or probe:GetCameraPosition()
-        local rangeSquared = math.min(probe:GetMaxRange(), 6000) ^ 2
-        maskOrigin, maskRangeSquared = origin, rangeSquared
-        if installedCandidates ~= candidates then
-            installedCandidates = candidates
-            local present = {}
-            for _, candidate in ipairs(candidates) do
-                local ent = candidate.entity
-                if candidate.npc and IsValid(ent) then
-                    present[ent] = true
-                    local saved = wrappedNPCs[ent]
-                    if not saved or ent.RenderOverride ~= saved.wrapper then
-                        local vars = ent:GetTable()
-                        local previous = rawget(vars, "RenderOverride")
-                        local original = ent.RenderOverride
-                        local draw = ent.Draw
-                        local custom = isfunction(original) or isfunction(draw)
-                        local record = {previous = previous, custom = custom}
-                        local drawModel = isfunction(original) and original or isfunction(draw) and draw or nativeDrawModel
-                        local wrapper = function(self, flags)
-                            local heat = maskActive and npcMaskFrame == FrameNumber()
-                                and bit.band(flags or STUDIO_RENDER, depthDrawFlags) == 0
-                                and self:WorldSpaceCenter():DistToSqr(maskOrigin) <= maskRangeSquared
-                            -- Outside the heat pass, leave the engine's normal
-                            -- draw path alone (including depth/shadow passes).
-                            if not heat then return drawModel(self, flags) end
-                            if custom then stencilWriter(128) else render.SetStencilReferenceValue(128) end
-                            render.MaterialOverride(heatMaterial)
-                            flags = bit.bor(flags or STUDIO_RENDER, heatDrawFlags)
-                            -- Preserve scripted rendering and existing overrides. This
-                            -- is the normal engine draw, not a second heat-model draw.
-                            local ok, err = pcall(drawModel, self, flags)
-                            -- Subsequent opaque occluders clear the heat bit wherever
-                            -- they win the depth test, so walls/props still hide NPCs.
-                            if ok then record.heatFrame = FrameNumber() end
-                            render.MaterialOverride(nil)
-                            if custom then stencilWriter(0) else render.SetStencilReferenceValue(0) end
-                            if not ok and CurTime() >= (drawErrors[self] or 0) then
-                                drawErrors[self] = CurTime() + 5
-                                ErrorNoHalt("[Probe Droid NPC heat] " .. tostring(err) .. "\n")
-                            end
-                        end
-                        record.wrapper = wrapper
-                        wrappedNPCs[ent] = record
-                        ent.RenderOverride = wrapper
-                    end
-                end
-            end
-            for ent, saved in pairs(wrappedNPCs) do
-                if not present[ent] then
-                    if IsValid(ent) and ent.RenderOverride == saved.wrapper then
-                        ent.RenderOverride = saved.previous
-                    end
-                    wrappedNPCs[ent] = nil
-                end
-            end
-        end
-        render.ClearStencil()
-        stencilWriter(0)
-        npcMaskFrame, maskActive = FrameNumber(), true
-    end)
-    hook.Add("PostDrawOpaqueRenderables", "ProbeDroid.NPCHeatMask", function(depth, sky)
-        if depth or sky or npcMaskFrame ~= FrameNumber() then return end
-        maskActive = false
-        endStencil()
-    end)
-    hook.Add("ShutDown", "ProbeDroid.NPCHeatMask", restoreNPCs)
-    hook.Add("Think", "ProbeDroid.NPCHeatMaskCleanup", function()
-        if installedCandidates and (not thermalVision:GetBool() or not controlledProbe(LocalPlayer())) then
-            restoreNPCs()
-            npcMaskFrame = -1
-        end
-    end)
-
-    hook.Add("RenderScreenspaceEffects", "ProbeDroid.ThermalVision", function()
-        local ply = LocalPlayer()
-        local probe = controlledProbe(ply)
-        if not probe or not thermalVision:GetBool() then
-            lastProbe = nil
-            return
-        end
-        local view = render.GetViewSetup(true)
-        local origin = view.origin or probe:GetCameraPosition()
-        local rangeSquared = math.min(probe:GetMaxRange(), 6000) ^ 2
-        scanTargets(probe)
-
-        local maskedNPCs = npcMaskFrame == FrameNumber()
-        if maskedNPCs then
-            -- NPCs already used the cheap heat material in their normal draw.
-            -- Apply the cold image filter only to the remaining scene pixels.
-            render.SetStencilEnable(true)
-            render.SetStencilWriteMask(0)
-            render.SetStencilTestMask(128)
-            render.SetStencilReferenceValue(128)
-            render.SetStencilCompareFunction(STENCIL_NOTEQUAL)
-            render.SetStencilPassOperation(STENCIL_KEEP)
-            render.SetStencilFailOperation(STENCIL_KEEP)
-            render.SetStencilZFailOperation(STENCIL_KEEP)
-        end
-        DrawColorModify(coldPalette)
-        tintSensorImage(170, 6, 2)
-        if maskedNPCs then endStencil() end
-        local material = getHeatMaterial()
-        local angles = view.angles or probe.ClientViewAngles or ply:EyeAngles()
-        local forward, right, up = angles:Forward(), angles:Right(), angles:Up()
-        -- Conservative sphere/frustum rejection preserves partly visible models.
-        -- Keep a generous FOV margin for engine aspect-ratio adjustments.
-        local tanH = math.tan(math.rad(math.Clamp(math.max(view.fov or 120, 120) + 10, 1, 175) * 0.5))
-        local tanV = tanH / (ScrW() / math.max(ScrH(), 1))
-        local sideMargin, topMargin = math.sqrt(1 + tanH * tanH), math.sqrt(1 + tanV * tanV)
-        -- Inherit the actual world-view projection, including the engine's
-        -- aspect-adjusted FOV and clipping planes. Reconstructing it from the
-        -- player's base FOV makes the heat pass drift on widescreen displays.
-        cam.Start3D()
-        render.MaterialOverride(material)
-        -- Heat colors are baked into the texture: avoid a second model-lighting
-        -- calculation for every actor, weapon, and scripted model each frame.
-        local ok, err = xpcall(function()
-            for i = 1, #candidates do
-                local candidate = candidates[i]
-                local ent = candidate.entity
-                local npcState = candidate.npc and wrappedNPCs[ent]
-                -- Class/model eligibility and bounds are cached by the scanner.
-                -- An opaque native NPC skipped by the engine is culled, not
-                -- missing a heat pass. Only custom/translucent NPCs need the
-                -- fallback when they did not contribute to this frame's mask.
-                if IsValid(ent) and not (npcState and npcState.heatFrame == FrameNumber())
-                    and not (maskedNPCs and opaqueNativeNPC(ent, npcState))
-                    and not ent:IsDormant() and not ent:GetNoDraw()
-                    and (not candidate.weapon or visibleWeapon(ent)) then
-                    local delta = ent:WorldSpaceCenter() - origin
-                    local radius = candidate.radius
-                    local depth = delta:Dot(forward)
-                    if delta:LengthSqr() <= rangeSquared and depth >= -radius
-                        and math.abs(delta:Dot(right)) <= math.max(depth, 0) * tanH + radius * sideMargin
-                        and math.abs(delta:Dot(up)) <= math.max(depth, 0) * tanV + radius * topMargin then
-                        -- Keep normal depth testing: terrain and walls occlude heat.
-                        -- Let the renderer clip models at the edge of the view;
-                        -- their centre may be behind us while part is visible.
-                        -- A broken addon model must not cancel all later targets.
-                        local drawn, drawError = pcall(candidate.draw, ent, heatDrawFlags)
-                        if not drawn and CurTime() >= (drawErrors[ent] or 0) then
-                            drawErrors[ent] = CurTime() + 5
-                            ErrorNoHalt("[Probe Droid thermal entity " .. ent:EntIndex() .. "] " .. tostring(drawError) .. "\n")
-                        end
-                    end
-                end
-            end
-        end, debug.traceback)
-        render.MaterialOverride(nil)
-        cam.End3D()
-        if not ok then ErrorNoHalt("[Probe Droid thermal] " .. tostring(err) .. "\n") end
-    end)
-end
+include("probe_droid/thermal.lua")(controlledProbe, thermalVision)
 
 -- The local player's model uses predicted camera angles. Keep its rendered
 -- body and aiming pose at the launch orientation as well as locking the server.
@@ -1095,7 +807,7 @@ local function installHUD(controlledProbe)
             text("OPTICAL RECONNAISSANCE / CHANNEL 01", 46 * s, 57 * s, "Small", dim)
         end
         text("LIVE  /  " .. string.format("%06.1f", CurTime()), w - 46 * s, 34 * s, "Text", nil, TEXT_ALIGN_RIGHT)
-        local sensor = thermalVision:GetBool() and "IR / RED HOT [R]"
+        local sensor = thermalVision:GetBool() and "IR / THERMAL [R]"
             or nightVision:GetBool() and "NIGHT VISION [N]" or "OPTICAL [R IR / N NV]"
         text(sensor,
             w - 46 * s, 57 * s, "Small", white, TEXT_ALIGN_RIGHT)

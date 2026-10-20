@@ -1,0 +1,5 @@
+"UnlitGeneric"
+{
+    "$basetexture" "probe_droid/thermal/lookup"
+    "$ignorez" "1"
+}

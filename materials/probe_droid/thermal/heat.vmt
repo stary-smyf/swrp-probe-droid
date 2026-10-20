@@ -1,0 +1,16 @@
+"VertexLitGeneric"
+{
+    "$basetexture" "probe_droid/thermal/heat"
+    "$detailscale" "1"
+    "$detailblendmode" "5"
+    "$detailblendfactor" "20"
+    "Proxies"
+    {
+        "AnimatedTexture"
+        {
+            "animatedtexturevar" "$basetexture"
+            "animatedtextureframenumvar" "$frame"
+            "animatedtextureframerate" "60"
+        }
+    }
+}

@@ -27,7 +27,7 @@ to its pilot and nearby players.
 | A / D | Strafe |
 | Space / Ctrl | Ascend / descend |
 | Shift | Boost (1.8x speed) |
-| R (reload binding) | Toggle red-hot thermovision |
+| R (reload binding) | Toggle Splinter Cell thermal vision |
 | N | Toggle night vision |
 | Right click (secondary attack binding) | Toggle stealth |
 | Hold E for 2 seconds | Destroy the probe and return to your body |
@@ -87,25 +87,24 @@ Thermal imaging drains the battery at 2x the normal rate; night vision uses
 3x, and stealth with night vision uses 2.25x. Switching sensors off restores
 the optical rate (1x normally, 2x in stealth).
 
-Press R while piloting to switch between optical and red-hot thermal imaging.
-Thermal mode shows the environment in dark red and simulates orange/yellow/white
-heat on visible non-prop model entities, including living players, NPCs,
-NextBots, vehicles (including jeeps, airboats, and seats), items, weapons, and
-scripted entities. Ordinary props, brush geometry, and
-invisible logic entities stay cold. Equipped and dropped weapons are highlighted;
-holstered inventory weapons are skipped, matching their normal visibility.
-Opaque NPCs and NextBots use the lightweight heat material during their normal
-draw, avoiding a second model render for the thermal overlay. Their silhouettes
-are masked out of the red scene filter. Custom/translucent NPCs retain a fallback
-when they did not contribute to the normal-draw mask. Native opaque NPCs skipped
-by engine visibility/occlusion culling are not resubmitted by that fallback.
-Thermal and night-vision tinting each reuse the current image, eliminating an
-extra full-screen texture copy per frame. Walls and terrain still
-block the heat overlay. All eligible entities within scan range can be highlighted; nearby
-items do not consume a limited number of target slots. The effect ends when
-you leave drone control; your preferred mode
-is remembered. You can also set `probe_droid_thermal 1` or `0` in the client
-console. Thermal rendering is independent of the HUD camera-effects setting.
+Press R while piloting to switch between optical view and the Splinter Cell NVG
+**Thermal** preset. This replaces the previous red thermal effect with the
+supplied NVG heat animation, colour lookup, bloom, motion blur and animated noise.
+Living players, NPCs and NextBots receive the preset's heat material; props,
+vehicles and weapons retain their scene materials. Models use the normal engine
+rendering path and occlusion rather than an extra through-wall heat pass.
+A broad client-only illuminator follows the drone camera, including when zoomed.
+Entity materials, colours and render modes are restored when thermal mode or
+flight ends, and the illuminator is removed. Your preferred mode is remembered.
+Turning thermal off immediately restores character materials, colours and render
+modes. Loading the renderer also clears heat materials left by older versions.
+You can also set `probe_droid_thermal 1` or `0` in the client console. Thermal
+rendering is independent of the HUD camera-effects setting. The NVG framework
+does not need to be installed separately: the required native VTF/VMT assets are
+included and registered for client download. Reconnect clients after installing
+this update so they receive the new materials. Source attribution is recorded in
+`THIRD_PARTY_NOTICES.md`. The new effect still needs live visual verification;
+historical thermal screenshots and performance results describe the old renderer.
 
 Press N to toggle night vision. Image gain and a short-range, client-only
 illuminator help reveal unlit surroundings. Thermal and night vision disable

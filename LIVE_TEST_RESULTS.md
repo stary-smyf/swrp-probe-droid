@@ -1,5 +1,10 @@
 # Live debugger test results
 
+The thermal renderer has been replaced with the supplied Splinter Cell NVG
+Thermal preset. Its local regression checks pass, but the new effect has not
+been verified live. Thermal screenshots, timings, and rendering observations
+below refer to the previous implementation.
+
 Manual exit now requires a continuous two-second hold of E, with a countdown
 and release-to-cancel behavior. Local input regression checks pass; the historical
 instant-exit result below predates this change.

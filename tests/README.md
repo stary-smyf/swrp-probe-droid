@@ -30,12 +30,11 @@ The tests load the actual addon functions with deterministic engine API mocks:
   costs, transition accounting, and sensor synchronization for the current pilot.
 - `hud_scan_test.lua` checks per-refresh trace limits, cadence, coherent sample
   positions, invalid contacts, flight resets, and completion at low frame rates.
-- `thermal_test.lua` checks draw submissions for visible and engine-culled NPCs,
-  custom/translucent renderers, fallback views, draw failures, render-state cleanup,
-  override restoration, and the framebuffer tint's blend factors.
-
-To check the thermal regression against an earlier autorun file, set
-`PROBE_DROID_THERMAL_TEST_SOURCE` to that file's path for the test process.
+- `thermal_test.lua` checks the replacement Splinter Cell NVG preset's processing
+  order, actor filtering, drone illuminator, scan cadence, material/colour/render
+  mode restoration, missing-asset fallback, and native texture assets.
+  It reproduces multiplayer material getters hiding client overrides and checks
+  immediate toggle cleanup plus recovery of already stuck character materials.
 
 These checks measure Lua control flow and work counts. They cannot measure GPU
 frame time or verify actual Source-engine occlusion, stencil pixels, or colors;
