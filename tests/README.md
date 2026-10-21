@@ -19,7 +19,7 @@ The tests load the actual addon functions with deterministic engine API mocks:
 - `zoom_test.lua` checks LMB zoom cycling, release handling, optical magnification,
   aiming sensitivity, stereo audio, full-clip input cooldown, asynchronous loading,
   stale audio callbacks, new-flight reset, and normal controls outside a flight.
-- `exit_hold_test.lua` checks the two-second exit hold through client/server
+- `exit_hold_test.lua` checks the one-second exit hold through client/server
   input, release cancellation, interrupted input, stale commands, and new flights.
 - `npc_targeting_test.lua` checks hostile/friendly targeting, visibility, stealth
   memory cleanup, reacquisition, right-click input through client and server

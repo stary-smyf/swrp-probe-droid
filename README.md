@@ -30,12 +30,12 @@ to its pilot and nearby players.
 | R (reload binding) | Toggle Splinter Cell thermal vision |
 | N | Toggle night vision |
 | Right click (secondary attack binding) | Toggle stealth |
-| Hold E for 2 seconds | Destroy the probe and return to your body |
+| Hold E for 1 second | Destroy the probe and return to your body |
 
 Your body stays at the launch point and remains vulnerable. The drone settles
 into a hover after releasing the controls and collides with the map, props, and
-other players. Holding E shows an exit countdown and progress bar; releasing
-it before two seconds cancels the exit.
+other players. Holding E shows a deactivation countdown; releasing
+it before one second cancels the exit.
 Zoom starts at 1x for each flight. The HUD shows the current magnification;
 mouse sensitivity scales down at 3x and 6x for precise aiming.
 Zooming in plays `camerazoom.wav`; returning from 6x to 1x plays `unzoom.wav`.

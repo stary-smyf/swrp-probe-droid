@@ -1,6 +1,7 @@
 if SERVER then
     AddCSLuaFile()
     AddCSLuaFile("autorun/client/probe_droid_audio.lua")
+    AddCSLuaFile("autorun/client/probe_droid_warnings.lua")
     AddCSLuaFile("probe_droid/thermal.lua")
     AddCSLuaFile("probe_droid/nightvision.lua")
     resource.AddFile("materials/probe_droid/nightvision/grain.vmt")
@@ -8,7 +9,7 @@ if SERVER then
         resource.AddFile("materials/probe_droid/thermal/" .. name)
     end
     resource.AddFile("materials/entities/weapon_probe_droid.png")
-    for _, name in ipairs({"camerazoom.wav", "unzoom_loud.wav", "probedroidhover.wav", "probedroidspeak1.wav",
+    for _, name in ipairs({"warning.wav", "camerazoom.wav", "unzoom_loud.wav", "probedroidhover.wav", "probedroidspeak1.wav",
         "probedroidspeak2.wav", "probedroidspeak3.wav"}) do
         resource.AddFile("sound/probe_droid/" .. name)
     end
@@ -80,14 +81,14 @@ hook.Add("StartCommand", "ProbeDroid.FlightInput", function(ply, cmd)
             -- commands must not finish an exit while the pilot is disconnected.
             if not probe.ExitHoldStarted or now - probe.LastExitCommand > 0.25 then
                 probe.ExitHoldStarted = now
-                probe:SetNW2Float("ProbeDroidExitEnd", now + 2)
+                probe:SetNW2Float("ProbeDroidExitEnd", now + 1)
             end
             probe.LastExitCommand = now
         elseif probe.ExitHoldStarted then
             probe.ExitHoldStarted, probe.LastExitCommand = nil, nil
             probe:SetNW2Float("ProbeDroidExitEnd", 0)
         end
-        if probe.ExitHoldStarted and now - probe.ExitHoldStarted >= 2 then
+        if probe.ExitHoldStarted and now - probe.ExitHoldStarted >= 1 then
             probe:DestroyProbe("flight ended by pilot")
         else
             local stealthDown = cmd:KeyDown(IN_ATTACK2)
@@ -427,10 +428,10 @@ local function updateLayout(w, h)
     if layout.width == w and layout.height == h and layout.preference == preference then return end
     layout = layoutFor(w, h, preference)
     scale = layout.scale
-    for name, size in pairs({Small = 14, Text = 17, Value = 25, Stealth = 28}) do
+    for name, size in pairs({Small = 14, Text = 17, Value = 25, Stealth = 28, Warning = 30}) do
         surface.CreateFont("ProbeOptics." .. name, {
             font = "Consolas", size = math.max(7, math.Round(size * scale)),
-            weight = (name == "Value" or name == "Stealth") and 700 or 600, antialias = true
+            weight = (name == "Value" or name == "Stealth" or name == "Warning") and 700 or 600, antialias = true
         })
     end
 end
@@ -698,16 +699,10 @@ local function drawExitProgress(probe, w, h)
     if deadline == 0 then return end
     local s, cx, y = scale, w / 2, h / 2 + 139 * scale
     local remaining = math.max(0, deadline - CurTime())
-    local progress = math.Clamp(1 - remaining / 2, 0, 1)
     surface.SetDrawColor(backing)
-    surface.DrawRect(cx - 160 * s, y, 320 * s, 64 * s)
+    surface.DrawRect(cx - 160 * s, y, 320 * s, 36 * s)
     text(string.format("DEACTIVATING / %.1f s", remaining), cx, y + 8 * s,
         "Text", stealthHighlight, TEXT_ALIGN_CENTER)
-    text("RELEASE TO CANCEL", cx, y + 33 * s, "Small", stealthHighlight, TEXT_ALIGN_CENTER)
-    surface.SetDrawColor(dim)
-    surface.DrawRect(cx - 146 * s, y + 54 * s, 292 * s, 4 * s)
-    surface.SetDrawColor(stealthHighlight)
-    surface.DrawRect(cx - 146 * s, y + 54 * s, 292 * s * progress, 4 * s)
 end
 
 local function installHUD(controlledProbe)
@@ -909,16 +904,16 @@ local function installHUD(controlledProbe)
         meter(px + 12 * s, ty + 110 * s, pw - 24 * s, signal, signalColor)
         text(string.format("UPLINK %.1f / %.1f m", meters(distance), meters(range)), px + 12 * s, ty + 134 * s, "Text", white)
         if layout.compact then
-            text("WASD / FLY | SPACE CTRL / ALT", cx, h - 48 * s, "Small", nil, TEXT_ALIGN_CENTER)
-            text("SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | HOLD E 2s EXIT", cx, h - 28 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("WSAD / FLY | SPACE CTRL / ALT", cx, h - 48 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | E EXIT", cx, h - 28 * s, "Small", nil, TEXT_ALIGN_CENTER)
         else
-            text("WASD FLY | SPACE CTRL ALT | SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | HOLD E 2s EXIT", cx, h - 42 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("WSAD - FLY | SPACE/CTRL - UP/DOWN | SHIFT - BOOST | LMB - ZOOM | R - IR | N - NV | RMB - STEALTH | E - EXIT", cx, h - 42 * s, "Small", nil, TEXT_ALIGN_CENTER)
         end
         if battery < 0.2 or signal < 0.2 then
             local warning = battery < 0.2 and "POWER CORE DEPLETING" or "TRANSMISSION LIMIT"
             if battery < 0.2 and signal < 0.2 then warning = "POWER LOW / TRANSMISSION LIMIT" end
             local pulse = Color(255, 75, 45, 165 + math.sin(RealTime() * 5) * 60)
-            text("// " .. warning .. " //", cx, h - 91 * s, "Text", pulse, TEXT_ALIGN_CENTER)
+            text("// " .. warning .. " //", cx, h - 105 * s, "Warning", pulse, TEXT_ALIGN_CENTER)
         end
     end
     local cached, nextPaint, lastProbe, lastMode, lastScale, lastEffects, lastStealth

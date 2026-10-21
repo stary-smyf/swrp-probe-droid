@@ -1,6 +1,9 @@
 "VertexLitGeneric"
 {
     "$basetexture" "probe_droid/thermal/heat"
+    // Keep heat signatures bright beyond the drone illuminator's reach.
+    "$selfillum" "1"
+    "$selfillumtint" "[1 1 1]"
     "$detailscale" "1"
     "$detailblendmode" "5"
     "$detailblendfactor" "20"

@@ -8,17 +8,30 @@ return function(controlledProbe, thermalVision)
     end
     hook.Remove("Think", "ProbeDroid.NPCHeatMaskCleanup")
 
-    local heatPath = "probe_droid/thermal/heat"
+    local legacyHeatPath = "probe_droid/thermal/heat"
+    local heatName = "probe_droid_thermal_unlit_v1"
+    local heatPath = "!" .. heatName
+    -- A model-compatible unlit material keeps the heat animation independent
+    -- of ambient light and the projected illuminator's distance attenuation.
+    -- Build it in Lua so clients cannot retain an older cached lit VMT.
+    local heat = CreateMaterial(heatName, "UnlitGeneric", {
+        ["$basetexture"] = "probe_droid/thermal/heat",
+        ["$model"] = "1",
+        ["Proxies"] = {AnimatedTexture = {
+            animatedtexturevar = "$basetexture", animatedtextureframenumvar = "$frame",
+            animatedtextureframerate = "60"
+        }}
+    })
     -- Recover actors left tinted by the older cleanup. GetMaterial can report
     -- a replicated server material while a client-only heat override remains.
     for _, ent in ipairs(ents.GetAll()) do
         if IsValid(ent) and (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()) then
             local material = ent:GetMaterial()
-            ent:SetMaterial(material == heatPath and "" or material)
+            ent:SetMaterial((material == heatPath or material == legacyHeatPath) and "" or material)
         end
     end
     local lookup = Material("probe_droid/thermal/lookup")
-    local heat = Material(heatPath)
+    local heatAsset = Material(legacyHeatPath)
     local noise = Material("probe_droid/thermal/noise")
     local saved, nextScan, lastProbe = {}, 0, nil
     local projector, warned
@@ -63,7 +76,7 @@ return function(controlledProbe, thermalVision)
         local probe = controlledProbe(LocalPlayer())
         if not probe or not thermalVision:GetBool() then return end
         -- Never cover the view with an error material if downloads are missing.
-        if heat:IsError() or lookup:IsError() or noise:IsError() then
+        if heat:IsError() or heatAsset:IsError() or lookup:IsError() or noise:IsError() then
             if not warned then
                 warned = true
                 ErrorNoHalt("[Probe Droid] NVG thermal materials missing; reconnect to download addon assets.\n")
@@ -116,7 +129,8 @@ return function(controlledProbe, thermalVision)
             projector:SetFOV(179)
             projector:SetVerticalFOV(179)
             projector:SetBrightness(3)
-            projector:SetFarZ(4096)
+            -- Keep distant heat targets illuminated as well as nearby actors.
+            projector:SetFarZ(16384)
         end
         projector:SetPos(probe:GetCameraPosition())
         projector:SetAngles(probe.ClientViewAngles or LocalPlayer():EyeAngles())

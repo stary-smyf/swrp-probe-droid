@@ -24,7 +24,7 @@ local player, npc, bot, prop, dead, hidden = actor("player"), actor("npc"), acto
 dead.dead, hidden.hidden = true, true
 local entities = {player, npc, bot, prop, dead, hidden}
 local probe = {GetCameraPosition = function() return "drone-camera" end, ClientViewAngles = "drone-angles"}
-local heatPath = "probe_droid/thermal/heat"
+local heatPath = "!probe_droid_thermal_unlit_v1"
 local env = setmetatable({
     _G = {}, RENDERMODE_GLOW = 3, Color = color, CurTime = function() return now end,
     isfunction = function(value) return type(value) == "function" end,
@@ -32,8 +32,17 @@ local env = setmetatable({
     LocalPlayer = function() return player end,
     IsValid = function(ent) return ent and ent.valid end,
     ErrorNoHalt = function() warnings = warnings + 1 end,
+    CreateMaterial = function(name, shader, parameters)
+        assert("!" .. name == heatPath)
+        assert(shader == "UnlitGeneric" and parameters["$model"] == "1",
+            "heat must stay visible without ambient or projected lighting")
+        assert(parameters["$basetexture"] == "probe_droid/thermal/heat")
+        assert(parameters.Proxies.AnimatedTexture.animatedtextureframerate == "60")
+        assert(not parameters["$ignorez"], "thermal must respect walls")
+        return {IsError = function() return missing end}
+    end,
     Material = function(path)
-        assert(path == heatPath or path == "probe_droid/thermal/lookup" or path == "probe_droid/thermal/noise")
+        assert(path == "probe_droid/thermal/heat" or path == "probe_droid/thermal/lookup" or path == "probe_droid/thermal/noise")
         return {IsError = function() return missing end}
     end,
     hook = {Add = function(event, name, callback) hooks[event .. "/" .. name] = callback end,
@@ -41,7 +50,8 @@ local env = setmetatable({
     ents = {GetAll = function() scans = scans + 1 return entities end},
     ProjectedTexture = function()
         local p = {valid = true, SetTexture = noop, SetEnableShadows = noop,
-            SetFOV = noop, SetVerticalFOV = noop, SetBrightness = noop, SetFarZ = noop,
+            SetFOV = noop, SetVerticalFOV = noop, SetBrightness = noop,
+            SetFarZ = function(self, value) self.farZ = value end,
             SetPos = function(self, value) self.pos = value end,
             SetAngles = function(self, value) self.angles = value end, Update = noop,
             Remove = function(self) self.valid = false end}
@@ -80,6 +90,7 @@ end
 for _, ent in ipairs({prop, dead, hidden}) do assert(ent.material == "original", "invalid heat target") end
 assert(#projectors == 1 and projectors[1].pos == "drone-camera" and projectors[1].angles == "drone-angles",
     "illuminator did not follow drone view")
+assert(projectors[1].farZ == 16384, "thermal illuminator lost its extended range")
 assert(scans == 1, "target scan was repeated inside throttle interval")
 for i, name in ipairs({"color", "bloom", "lookup", "bloom", "motion", "color", "noise"}) do
     assert(draws[i][1] == name, "NVG postprocess order changed")
