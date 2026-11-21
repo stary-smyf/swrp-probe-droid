@@ -18,6 +18,32 @@ if SERVER then
     end
     CreateConVar("probe_droid_battery", "180", FCVAR_ARCHIVE, "Probe battery lifetime in seconds (new flights).", 5, 3600)
     CreateConVar("probe_droid_range", "6000", FCVAR_ARCHIVE, "Maximum distance from launch point in Source units (new flights).", 128, 100000)
+    local settingsPath = "probe_droid/settings.json"
+    local settingLimits = {
+        probe_droid_battery = {5, 3600},
+        probe_droid_range = {128, 100000},
+        probe_droid_spawn_cooldown = {0, 3600}
+    }
+    local savedSettings = {}
+    local stored = util.JSONToTable(file.Read(settingsPath, "DATA") or "")
+    if istable(stored) then
+        for name, limits in pairs(settingLimits) do
+            local value = stored[name]
+            if isnumber(value) and value == value and value >= limits[1] and value <= limits[2] then
+                savedSettings[name] = value
+            end
+        end
+    end
+    local function saveSetting(name, value)
+        local previous = savedSettings[name]
+        savedSettings[name] = value
+        file.CreateDir("probe_droid")
+        if not file.Write(settingsPath, util.TableToJSON(savedSettings, true)) then
+            savedSettings[name] = previous
+            return false
+        end
+        return true
+    end
     local rangeMigrated = CreateConVar("probe_droid_range_migrated_6000", "0", FCVAR_ARCHIVE,
         "Internal marker for the one-time upgrade to the 6000-unit range.", 0, 1)
     local batteryMigrated = CreateConVar("probe_droid_battery_migrated_180", "0", FCVAR_ARCHIVE,
@@ -25,8 +51,12 @@ if SERVER then
     -- Archived values survive changes to CreateConVar's default. Wait until
     -- startup configuration has run; also handles Lua refresh on a live server.
     timer.Simple(0, function()
+        -- Command values take precedence over startup configuration and must
+        -- survive dedicated-server restarts without host_writeconfig.
+        for name, value in pairs(savedSettings) do GetConVar(name):SetFloat(value) end
         local range = GetConVar("probe_droid_range")
-        if not rangeMigrated:GetBool() and (range:GetFloat() == 3000 or range:GetFloat() == 5000) then
+        if savedSettings.probe_droid_range == nil and not rangeMigrated:GetBool()
+            and (range:GetFloat() == 3000 or range:GetFloat() == 5000) then
             range:SetFloat(6000)
             for _, probe in ipairs(ents.FindByClass("sent_probe_droid")) do
                 if probe:GetMaxRange() == 3000 or probe:GetMaxRange() == 5000 then probe:SetMaxRange(6000) end
@@ -34,7 +64,7 @@ if SERVER then
         end
         rangeMigrated:SetBool(true)
         local battery = GetConVar("probe_droid_battery")
-        if not batteryMigrated:GetBool() and battery:GetFloat() == 120 then
+        if savedSettings.probe_droid_battery == nil and not batteryMigrated:GetBool() and battery:GetFloat() == 120 then
             battery:SetFloat(180)
             for _, probe in ipairs(ents.FindByClass("sent_probe_droid")) do
                 if probe:GetBatteryDuration() == 120 then
@@ -56,7 +86,10 @@ if SERVER then
     end, "ProbeDroid.CooldownHUD")
     concommand.Add("probecooldown", function(ply, _, args)
         local function reply(message)
-            if IsValid(ply) then ply:ChatPrint(message) else print(message) end
+            if IsValid(ply) then
+                ply:ChatPrint(message)
+                ply:PrintMessage(HUD_PRINTCONSOLE, message .. "\n")
+            else print(message) end
         end
         if IsValid(ply) and not ply:IsAdmin() then
             reply("Only administrators can change the probe cooldown.")
@@ -72,9 +105,49 @@ if SERVER then
             reply("Usage: probecooldown X (seconds from 0 to 3600; 0 disables the cooldown).")
             return
         end
+        if not saveSetting("probe_droid_spawn_cooldown", seconds) then
+            reply("Could not save probe settings; cooldown unchanged.")
+            return
+        end
         spawnCooldown:SetFloat(seconds)
         reply(string.format("Probe cooldown set to %g s; after destruction: %g s.", seconds, seconds * 1.5))
     end, nil, "Set the probe cooldown in seconds (administrators/server console only).")
+    local function addFlightSettingCommand(name, convarName, label, unit, scale, minimum, maximum)
+        concommand.Add(name, function(ply, _, args)
+            local function reply(message)
+                if IsValid(ply) then
+                    ply:ChatPrint(message)
+                    ply:PrintMessage(HUD_PRINTCONSOLE, message .. "\n")
+                else print(message) end
+            end
+            if IsValid(ply) and not ply:IsAdmin() then
+                reply("Only administrators can change the probe " .. label .. ".")
+                return
+            end
+            local setting = GetConVar(convarName)
+            if #args == 0 then
+                reply(string.format("Probe %s: %g %s (new flights). Usage: %s X",
+                    label, setting:GetFloat() * scale, unit, name))
+                return
+            end
+            local value = tonumber(args[1])
+            if #args ~= 1 or not value or value ~= value or value < minimum or value > maximum then
+                reply(string.format("Usage: %s X (%s from %g to %g).", name, unit, minimum, maximum))
+                return
+            end
+            if not saveSetting(convarName, value / scale) then
+                reply("Could not save probe settings; " .. label .. " unchanged.")
+                return
+            end
+            setting:SetFloat(value / scale)
+            reply(string.format("Probe %s set to %g %s (new flights).", label, setting:GetFloat() * scale, unit))
+        end, nil, "Set the probe " .. label .. " (administrators/server console only; new flights).")
+    end
+    addFlightSettingCommand("probebattery", "probe_droid_battery", "battery lifetime", "seconds", 1, 5, 3600)
+    -- Use the same Source-unit conversion as the drone HUD.
+    local metersPerUnit = 0.01905
+    addFlightSettingCommand("probesignal", "probe_droid_range", "signal range", "meters", metersPerUnit,
+        128 * metersPerUnit, 100000 * metersPerUnit)
 end
 
 local function controlledProbe(ply)
