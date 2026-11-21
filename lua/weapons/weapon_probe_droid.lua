@@ -3,7 +3,7 @@ if SERVER then AddCSLuaFile() end
 SWEP.Base = "weapon_base"
 SWEP.PrintName = "Probe Droid Controller"
 SWEP.Author = "Probe Droid"
-SWEP.Instructions = "Stand still on the ground and left click to deploy a probe droid. In flight, left click cycles 1x/3x/6x zoom and right click toggles stealth. Hold E for 2 seconds to end flight."
+SWEP.Instructions = "Stand still on the ground and left click to deploy a probe droid. In flight, left click cycles 1x/3x/6x zoom and right click toggles stealth. Hold E for 1 second to deactivate, or B for 2 seconds to self-destruct."
 SWEP.Category = "Star Wars Gadgets"
 SWEP.IconOverride = "entities/weapon_probe_droid.png"
 SWEP.Spawnable = true
@@ -12,6 +12,7 @@ SWEP.UseHands = true
 SWEP.ViewModel = "models/swcw_items/sw_datapad_v.mdl"
 SWEP.WorldModel = "models/swcw_items/sw_datapad.mdl"
 SWEP.ViewModelFOV = 54
+SWEP.DeploySpeed = 12
 -- Matches the original Star Wars Datapad SWEP.
 SWEP.HoldType = "slam"
 SWEP.Slot = 4
@@ -28,6 +29,13 @@ SWEP.Secondary.Ammo = "none"
 
 function SWEP:Initialize()
     self:SetHoldType(self.HoldType)
+    self:SetDeploySpeed(self.DeploySpeed)
+end
+
+function SWEP:Deploy()
+    -- Also apply on existing controllers after Lua auto-refresh.
+    self:SetDeploySpeed(self.DeploySpeed)
+    return true
 end
 
 function SWEP:PrimaryAttack()
@@ -36,6 +44,16 @@ function SWEP:PrimaryAttack()
     local ply = self:GetOwner()
     if not IsValid(ply) or not ply:Alive() or ply:InVehicle() then return end
     if IsValid(ply:GetNW2Entity("ProbeDroidControlled")) then return end
+    -- Cooldown starts when control ends. Keep it on the player so replacing
+    -- the controller or respawning cannot bypass it, and read the live setting.
+    local cooldown = GetConVar("probe_droid_spawn_cooldown"):GetFloat() * (ply.ProbeDroidCooldownMultiplier or 1)
+    local remaining = (ply.ProbeDroidCooldownStarted or -math.huge) + cooldown - CurTime()
+    if remaining > 0 then
+        -- Also repair HUD state for a wait that started before Lua refreshed.
+        ply:SetNW2Float("ProbeDroidCooldownStarted", ply.ProbeDroidCooldownStarted)
+        ply:SetNW2Float("ProbeDroidCooldownMultiplier", ply.ProbeDroidCooldownMultiplier or 1)
+        return
+    end
     -- Check authoritative movement before spawning or freezing the pilot.
     -- Allow only negligible velocity jitter while standing on solid ground.
     if not ply:OnGround() or ply:GetMoveType() ~= MOVETYPE_WALK
@@ -76,6 +94,10 @@ end
 
 function SWEP:SecondaryAttack() end
 function SWEP:Reload() end
+
+-- The cooldown is drawn by its own HUDPaint hook, including in gamemodes
+-- that replace the active weapon's HUD. Clear the old renderer on refresh.
+if CLIENT then function SWEP:DrawHUD() end end
 
 function SWEP:Holster()
     local ply = self:GetOwner()

@@ -22,10 +22,26 @@ return function(controlledProbe, thermalVision)
             animatedtextureframerate = "60"
         }}
     })
+    local vehicleHeat = CreateMaterial("probe_droid_vehicle_heat_unlit_v1", "UnlitGeneric", {
+        ["$basetexture"] = "probe_droid/thermal/heat",
+        ["$model"] = "1",
+        ["$color2"] = "[2 2 2]",
+        ["Proxies"] = {AnimatedTexture = {
+            animatedtexturevar = "$basetexture", animatedtextureframenumvar = "$frame",
+            animatedtextureframerate = "60"
+        }}
+    })
+    local function isVehicle(ent)
+        return ent:IsVehicle() or ent.LVS or ent.LFS or ent.IsSimfphyscar
+    end
+    local function isHeatSource(ent)
+        -- Scripted vehicle bodies are often separate from their vehicle seats.
+        return ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or isVehicle(ent)
+    end
     -- Recover actors left tinted by the older cleanup. GetMaterial can report
     -- a replicated server material while a client-only heat override remains.
     for _, ent in ipairs(ents.GetAll()) do
-        if IsValid(ent) and (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()) then
+        if IsValid(ent) and isHeatSource(ent) then
             local material = ent:GetMaterial()
             ent:SetMaterial((material == heatPath or material == legacyHeatPath) and "" or material)
         end
@@ -34,6 +50,7 @@ return function(controlledProbe, thermalVision)
     local heatAsset = Material(legacyHeatPath)
     local noise = Material("probe_droid/thermal/noise")
     local saved, nextScan, lastProbe = {}, 0, nil
+    local vehicleParts = {}
     local projector, warned
     local heatColor = Color(255, 255, 255, 254)
     local palette = {
@@ -65,6 +82,7 @@ return function(controlledProbe, thermalVision)
     local function cleanup()
         for ent, record in pairs(saved) do restore(ent, record) end
         saved, lastProbe, nextScan = {}, nil, 0
+        vehicleParts = {}
         if IsValid(projector) then projector:Remove() end
         projector = nil
     end
@@ -76,7 +94,7 @@ return function(controlledProbe, thermalVision)
         local probe = controlledProbe(LocalPlayer())
         if not probe or not thermalVision:GetBool() then return end
         -- Never cover the view with an error material if downloads are missing.
-        if heat:IsError() or heatAsset:IsError() or lookup:IsError() or noise:IsError() then
+        if heat:IsError() or vehicleHeat:IsError() or heatAsset:IsError() or lookup:IsError() or noise:IsError() then
             if not warned then
                 warned = true
                 ErrorNoHalt("[Probe Droid] NVG thermal materials missing; reconnect to download addon assets.\n")
@@ -87,15 +105,32 @@ return function(controlledProbe, thermalVision)
     end
     local function eligible(ent, probe)
         return IsValid(ent) and ent ~= probe and not ent:IsDormant() and not ent:GetNoDraw()
-            and ((ent:IsPlayer() and ent:Alive()) or ent:IsNPC() or ent:IsNextBot())
+            and isHeatSource(ent) and (not ent:IsPlayer() or ent:Alive())
+    end
+    local function collectVehicleParts(ent, probe, visited)
+        if not IsValid(ent) or ent == probe or ent:IsDormant() or visited[ent] then return end
+        -- Do not include passengers or their equipment in the vehicle pass.
+        if ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or ent:IsWeapon() then return end
+        visited[ent] = true
+        local model = ent:GetModel()
+        if not ent:GetNoDraw() and model and model ~= "" then
+            vehicleParts[ent] = true
+        end
+        for _, child in ipairs(ent:GetChildren()) do
+            collectVehicleParts(child, probe, visited)
+        end
     end
     local function prepare(probe)
         if lastProbe ~= probe then cleanup() lastProbe = probe end
         if CurTime() < nextScan then return end
         nextScan = CurTime() + 0.25
         local present = {}
+        vehicleParts = {}
+        local visited = {}
         for _, ent in ipairs(ents.GetAll()) do
-            if eligible(ent, probe) then
+            if IsValid(ent) and isVehicle(ent) then
+                collectVehicleParts(ent, probe, visited)
+            elseif eligible(ent, probe) then
                 present[ent] = true
                 if not saved[ent] then
                     local color = ent:GetColor()
@@ -115,6 +150,24 @@ return function(controlledProbe, thermalVision)
         if depth or sky then return end
         local probe = activeProbe()
         if probe then prepare(probe) else cleanup() end
+    end)
+    hook.Add("PostDrawTranslucentRenderables", "ProbeDroid.VehicleHeat", function(depth, sky)
+        if depth or sky or not activeProbe() then return end
+        -- Override the complete model, including skins/submaterials that can
+        -- hide an entity-level SetMaterial. Normal depth testing keeps walls opaque.
+        local blend = render.GetBlend()
+        local r, g, b = render.GetColorModulation()
+        render.SetBlend(1)
+        render.SetColorModulation(1, 1, 1)
+        render.MaterialOverride(vehicleHeat)
+        for ent in pairs(vehicleParts) do
+            if IsValid(ent) and not ent:IsDormant() and not ent:GetNoDraw() then
+                ent:DrawModel()
+            end
+        end
+        render.MaterialOverride()
+        render.SetColorModulation(r, g, b)
+        render.SetBlend(blend)
     end)
     hook.Add("Think", "ProbeDroid.NVGThermal", function()
         local probe = activeProbe()

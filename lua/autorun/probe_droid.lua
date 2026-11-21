@@ -2,36 +2,79 @@ if SERVER then
     AddCSLuaFile()
     AddCSLuaFile("autorun/client/probe_droid_audio.lua")
     AddCSLuaFile("autorun/client/probe_droid_warnings.lua")
+    AddCSLuaFile("autorun/client/probe_droid_selfdestruct_audio.lua")
+    AddCSLuaFile("autorun/client/probe_droid_cooldown.lua")
     AddCSLuaFile("probe_droid/thermal.lua")
     AddCSLuaFile("probe_droid/nightvision.lua")
+    AddCSLuaFile("probe_droid/sensor_audio.lua")
     resource.AddFile("materials/probe_droid/nightvision/grain.vmt")
     for _, name in ipairs({"heat.vmt", "heat.vtf", "lookup.vmt", "lookup.vtf", "noise.vmt", "noise.vtf"}) do
         resource.AddFile("materials/probe_droid/thermal/" .. name)
     end
     resource.AddFile("materials/entities/weapon_probe_droid.png")
     for _, name in ipairs({"warning.wav", "camerazoom.wav", "unzoom_loud.wav", "probedroidhover.wav", "probedroidspeak1.wav",
-        "probedroidspeak2.wav", "probedroidspeak3.wav"}) do
-        resource.AddFile("sound/probe_droid/" .. name)
+        "probedroidspeak2.wav", "probedroidspeak3.wav", "selfdestrucalarm.wav", "nvon.wav", "nvoff.wav"}) do
+        resource.AddFile("sound/customsounds/" .. name)
     end
-    CreateConVar("probe_droid_battery", "120", FCVAR_ARCHIVE, "Probe battery lifetime in seconds (new flights).", 5, 3600)
-    CreateConVar("probe_droid_range", "5000", FCVAR_ARCHIVE, "Maximum distance from launch point in Source units (new flights).", 128, 100000)
-    local rangeMigrated = CreateConVar("probe_droid_range_migrated_5000", "0", FCVAR_ARCHIVE,
-        "Internal marker for the one-time upgrade of the old 3000-unit range.", 0, 1)
+    CreateConVar("probe_droid_battery", "180", FCVAR_ARCHIVE, "Probe battery lifetime in seconds (new flights).", 5, 3600)
+    CreateConVar("probe_droid_range", "6000", FCVAR_ARCHIVE, "Maximum distance from launch point in Source units (new flights).", 128, 100000)
+    local rangeMigrated = CreateConVar("probe_droid_range_migrated_6000", "0", FCVAR_ARCHIVE,
+        "Internal marker for the one-time upgrade to the 6000-unit range.", 0, 1)
+    local batteryMigrated = CreateConVar("probe_droid_battery_migrated_180", "0", FCVAR_ARCHIVE,
+        "Internal marker for the one-time upgrade to the 180-second battery.", 0, 1)
     -- Archived values survive changes to CreateConVar's default. Wait until
     -- startup configuration has run; also handles Lua refresh on a live server.
     timer.Simple(0, function()
-        if rangeMigrated:GetBool() then return end
         local range = GetConVar("probe_droid_range")
-        if range:GetFloat() == 3000 then
-            range:SetFloat(5000)
+        if not rangeMigrated:GetBool() and (range:GetFloat() == 3000 or range:GetFloat() == 5000) then
+            range:SetFloat(6000)
             for _, probe in ipairs(ents.FindByClass("sent_probe_droid")) do
-                if probe:GetMaxRange() == 3000 then probe:SetMaxRange(5000) end
+                if probe:GetMaxRange() == 3000 or probe:GetMaxRange() == 5000 then probe:SetMaxRange(6000) end
             end
         end
         rangeMigrated:SetBool(true)
+        local battery = GetConVar("probe_droid_battery")
+        if not batteryMigrated:GetBool() and battery:GetFloat() == 120 then
+            battery:SetFloat(180)
+            for _, probe in ipairs(ents.FindByClass("sent_probe_droid")) do
+                if probe:GetBatteryDuration() == 120 then
+                    probe:SetBatteryDuration(180)
+                    probe:SetBatteryEnd(probe:GetBatteryEnd() + 60)
+                end
+            end
+        end
+        batteryMigrated:SetBool(true)
     end)
     CreateConVar("probe_droid_speed", "350", FCVAR_ARCHIVE, "Normal probe speed in units per second; boost is 1.8x.", 50, 2000)
     CreateConVar("probe_droid_health", "60", FCVAR_ARCHIVE, "Probe health (new flights).", 1, 10000)
+    local spawnCooldown = CreateConVar("probe_droid_spawn_cooldown", "30", {FCVAR_ARCHIVE, FCVAR_REPLICATED},
+        "Cooldown after probe deactivation in seconds; destruction adds 50%; 0 disables the cooldown.", 0, 3600)
+    -- The HUD must not depend on a client-side ConVar having been created.
+    SetGlobalFloat("ProbeDroidSpawnCooldown", spawnCooldown:GetFloat())
+    cvars.AddChangeCallback("probe_droid_spawn_cooldown", function(_, _, value)
+        SetGlobalFloat("ProbeDroidSpawnCooldown", tonumber(value) or 30)
+    end, "ProbeDroid.CooldownHUD")
+    concommand.Add("probecooldown", function(ply, _, args)
+        local function reply(message)
+            if IsValid(ply) then ply:ChatPrint(message) else print(message) end
+        end
+        if IsValid(ply) and not ply:IsAdmin() then
+            reply("Only administrators can change the probe cooldown.")
+            return
+        end
+        if #args == 0 then
+            reply(string.format("Probe cooldown: %g s; after destruction: %g s. Usage: probecooldown X",
+                spawnCooldown:GetFloat(), spawnCooldown:GetFloat() * 1.5))
+            return
+        end
+        local seconds = tonumber(args[1])
+        if #args ~= 1 or not seconds or seconds ~= seconds or seconds < 0 or seconds > 3600 then
+            reply("Usage: probecooldown X (seconds from 0 to 3600; 0 disables the cooldown).")
+            return
+        end
+        spawnCooldown:SetFloat(seconds)
+        reply(string.format("Probe cooldown set to %g s; after destruction: %g s.", seconds, seconds * 1.5))
+    end, nil, "Set the probe cooldown in seconds (administrators/server console only).")
 end
 
 local function controlledProbe(ply)
@@ -65,6 +108,21 @@ if SERVER then
     end)
 end
 
+if CLIENT then
+    hook.Add("CreateMove", "ProbeDroid.SelfDestructInput", function(cmd)
+        if not controlledProbe(LocalPlayer()) then return end
+        -- B need not be bound to +zoom. Encode the physical hold in each user
+        -- command, including in single-player where client StartCommand is skipped.
+        if input.IsKeyDown(KEY_B) and not vgui.CursorVisible()
+            and not IsValid(vgui.GetKeyboardFocus()) and not gui.IsConsoleVisible()
+            and not gui.IsGameUIVisible() then
+            cmd:SetButtons(bit.bor(cmd:GetButtons(), IN_ZOOM))
+        else
+            cmd:RemoveKey(IN_ZOOM)
+        end
+    end)
+end
+
 hook.Add("StartCommand", "ProbeDroid.FlightInput", function(ply, cmd)
     local probe = controlledProbe(ply)
     if not probe then return end
@@ -88,8 +146,22 @@ hook.Add("StartCommand", "ProbeDroid.FlightInput", function(ply, cmd)
             probe.ExitHoldStarted, probe.LastExitCommand = nil, nil
             probe:SetNW2Float("ProbeDroidExitEnd", 0)
         end
+        -- The client encodes the B hold as IN_ZOOM. Keep the hold on the
+        -- server and reject backup commands or gaps, just like deactivation.
+        if cmd:KeyDown(IN_ZOOM) and not cmd:IsForced() and now - probe.ControlStarted > 0.5 then
+            if not probe.SelfDestructHoldStarted or now - probe.LastSelfDestructCommand > 0.25 then
+                probe.SelfDestructHoldStarted = now
+                probe:SetNW2Float("ProbeDroidSelfDestructEnd", now + 2)
+            end
+            probe.LastSelfDestructCommand = now
+        elseif probe.SelfDestructHoldStarted then
+            probe.SelfDestructHoldStarted, probe.LastSelfDestructCommand = nil, nil
+            probe:SetNW2Float("ProbeDroidSelfDestructEnd", 0)
+        end
         if probe.ExitHoldStarted and now - probe.ExitHoldStarted >= 1 then
-            probe:DestroyProbe("flight ended by pilot")
+            probe:DestroyProbe("flight ended by pilot", "deactivate")
+        elseif probe.SelfDestructHoldStarted and now - probe.SelfDestructHoldStarted >= 2 then
+            probe:DestroyProbe("self-destruct activated", "detonate")
         else
             local stealthDown = cmd:KeyDown(IN_ATTACK2)
             if stealthDown and not probe.StealthKeyDown then
@@ -196,8 +268,8 @@ hook.Add("PlayerBindPress", "ProbeDroid.Zoom", function(ply, bind, pressed)
         if zoomLoading or RealTime() < nextZoomAt then return true end
         if IsValid(zoomSound) then zoomSound:Stop() end
         probe.ClientZoomLevel = (probe.ClientZoomLevel or 1) % #zoomLevels + 1
-        local zoomFile = probe.ClientZoomLevel == 1 and "sound/probe_droid/unzoom_loud.wav"
-            or "sound/probe_droid/camerazoom.wav"
+        local zoomFile = probe.ClientZoomLevel == 1 and "sound/customsounds/unzoom_loud.wav"
+            or "sound/customsounds/camerazoom.wav"
         -- Use the same stereo-capable 2D playback as the drone's other WAVs.
         -- Block another zoom until loading and the entire cue have finished.
         zoomLoading = true
@@ -307,10 +379,9 @@ if thermalVision:GetBool() and nightVision:GetBool() then
     RunConsoleCommand("probe_droid_nightvision", "0")
 end
 
+local toggleSensor = include("probe_droid/sensor_audio.lua")(controlledProbe)
 local function toggleNightVision()
-    if not controlledProbe(LocalPlayer()) then return end
-    RunConsoleCommand("probe_droid_nightvision", nightVision:GetBool() and "0" or "1")
-    surface.PlaySound("buttons/lightswitch2.wav")
+    toggleSensor("probe_droid_nightvision")
 end
 concommand.Add("probe_droid_toggle_nightvision", toggleNightVision)
 
@@ -330,6 +401,16 @@ end
 
 include("probe_droid/nightvision.lua")(controlledProbe, nightVision, thermalVision, nightLight)
 
+hook.Add("RenderScreenspaceEffects", "ProbeDroid.OpticalTint", function()
+    if thermalVision:GetBool() or nightVision:GetBool()
+        or not controlledProbe(LocalPlayer()) then return end
+    -- A subtle dark-red lens tint, applied before the HUD is drawn.
+    cam.Start2D()
+    surface.SetDrawColor(70, 0, 0, 20)
+    surface.DrawRect(0, 0, ScrW(), ScrH())
+    cam.End2D()
+end)
+
 do
     local stealthBlur
     hook.Add("RenderScreenspaceEffects", "ProbeDroid.StealthBlur", function()
@@ -347,8 +428,7 @@ end
 
 hook.Add("PlayerBindPress", "ProbeDroid.ToggleThermal", function(ply, bind, pressed)
     if not pressed or string.lower(bind) ~= "+reload" or not controlledProbe(ply) then return end
-    RunConsoleCommand("probe_droid_thermal", thermalVision:GetBool() and "0" or "1")
-    surface.PlaySound("buttons/lightswitch2.wav")
+    toggleSensor("probe_droid_thermal")
     return true
 end)
 
@@ -428,10 +508,10 @@ local function updateLayout(w, h)
     if layout.width == w and layout.height == h and layout.preference == preference then return end
     layout = layoutFor(w, h, preference)
     scale = layout.scale
-    for name, size in pairs({Small = 14, Text = 17, Value = 25, Stealth = 28, Warning = 30}) do
+    for name, size in pairs({Small = 14, Text = 17, Value = 25, Stealth = 28, Warning = 30, SelfDestruct = 36}) do
         surface.CreateFont("ProbeOptics." .. name, {
             font = "Consolas", size = math.max(7, math.Round(size * scale)),
-            weight = (name == "Value" or name == "Stealth" or name == "Warning") and 700 or 600, antialias = true
+            weight = (name == "Value" or name == "Stealth" or name == "Warning" or name == "SelfDestruct") and 700 or 600, antialias = true
         })
     end
 end
@@ -695,13 +775,34 @@ local function drawStealthIndicator(probe, w)
 end
 
 local function drawExitProgress(probe, w, h)
-    local deadline = probe:GetNW2Float("ProbeDroidExitEnd", 0)
+    local destructDeadline = probe:GetNW2Float("ProbeDroidSelfDestructEnd", 0)
+    local detonating = destructDeadline ~= 0
+    local deadline = detonating and destructDeadline or probe:GetNW2Float("ProbeDroidExitEnd", 0)
     if deadline == 0 then return end
     local s, cx, y = scale, w / 2, h / 2 + 139 * scale
     local remaining = math.max(0, deadline - CurTime())
+    if detonating then
+        local width, height = math.min(520 * s, w - 32 * s), 104 * s
+        surface.SetDrawColor(backing)
+        surface.DrawRect(cx - width / 2, y, width, height)
+        surface.SetDrawColor(danger)
+        surface.DrawOutlinedRect(cx - width / 2, y, width, height, 2 * s)
+        local label = string.format("SELF-DESTRUCT | %.1f s", remaining)
+        local font = "SelfDestruct"
+        surface.SetFont("ProbeOptics." .. font)
+        local textWidth, textHeight = surface.GetTextSize(label)
+        if textWidth > width - 32 * s then
+            font = "Warning"
+            surface.SetFont("ProbeOptics." .. font)
+            textWidth, textHeight = surface.GetTextSize(label)
+        end
+        text(label, cx, y + (height - textHeight) / 2,
+            font, stealthHighlight, TEXT_ALIGN_CENTER)
+        return
+    end
     surface.SetDrawColor(backing)
     surface.DrawRect(cx - 160 * s, y, 320 * s, 36 * s)
-    text(string.format("DEACTIVATING / %.1f s", remaining), cx, y + 8 * s,
+    text(string.format("DEACTIVATING | %.1f s", remaining), cx, y + 8 * s,
         "Text", stealthHighlight, TEXT_ALIGN_CENTER)
 end
 
@@ -905,9 +1006,9 @@ local function installHUD(controlledProbe)
         text(string.format("UPLINK %.1f / %.1f m", meters(distance), meters(range)), px + 12 * s, ty + 134 * s, "Text", white)
         if layout.compact then
             text("WSAD / FLY | SPACE CTRL / ALT", cx, h - 48 * s, "Small", nil, TEXT_ALIGN_CENTER)
-            text("SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | E EXIT", cx, h - 28 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("SHIFT BOOST | LMB ZOOM | R IR | N NV | RMB STEALTH | E EXIT | B DESTRUCT (2s)", cx, h - 28 * s, "Small", nil, TEXT_ALIGN_CENTER)
         else
-            text("WSAD - FLY | SPACE/CTRL - UP/DOWN | SHIFT - BOOST | LMB - ZOOM | R - IR | N - NV | RMB - STEALTH | E - EXIT", cx, h - 42 * s, "Small", nil, TEXT_ALIGN_CENTER)
+            text("WSAD - FLY | SPACE/CTRL - UP/DOWN | SHIFT - BOOST | LMB - ZOOM | R - IR | N - NV | RMB - STEALTH | E - EXIT | B - DESTRUCT", cx, h - 42 * s, "Small", nil, TEXT_ALIGN_CENTER)
         end
         if battery < 0.2 or signal < 0.2 then
             local warning = battery < 0.2 and "POWER CORE DEPLETING" or "TRANSMISSION LIMIT"

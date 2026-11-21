@@ -3,15 +3,21 @@
 -- files as 3D streams even with its mono flag (BASS_ERROR_NO3D).
 if isfunction(_G.ProbeDroidStopAudio) then _G.ProbeDroidStopAudio() end
 
+-- Play independently of the entity so removal and the return to the pilot's
+-- body cannot cut off the shutdown cue.
+net.Receive("ProbeDroid.Deactivated", function()
+    surface.PlaySound("npc/scanner/scanner_powerdown.wav")
+end)
+
 local hoverVolume = CreateClientConVar("probe_droid_hover_volume", "0.3", true, false,
     "Probe hover volume (pilot and nearby drones).", 0, 1)
 local speechVolume = CreateClientConVar("probe_droid_speech_volume", "0.7", true, false,
     "Probe speech volume (pilot and nearby drones).", 0, 1)
-local hoverFile = "sound/probe_droid/probedroidhover.wav"
+local hoverFile = "sound/customsounds/probedroidhover.wav"
 local speechFiles = {
-    "sound/probe_droid/probedroidspeak1.wav",
-    "sound/probe_droid/probedroidspeak2.wav",
-    "sound/probe_droid/probedroidspeak3.wav"
+    "sound/customsounds/probedroidspeak1.wav",
+    "sound/customsounds/probedroidspeak2.wav",
+    "sound/customsounds/probedroidspeak3.wav"
 }
 local sessions, nextScan = {}, 0
 local innerRange, startRange, outerRange = 128, 1600, 1800

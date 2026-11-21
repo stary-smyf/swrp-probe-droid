@@ -2,6 +2,7 @@ AddCSLuaFile("shared.lua")
 AddCSLuaFile("cl_init.lua")
 include("shared.lua")
 include("npc_targeting.lua")
+util.AddNetworkString("ProbeDroid.Deactivated")
 
 function ENT:Initialize()
     self:SetModel(self.Model)
@@ -52,6 +53,10 @@ end
 function ENT:EndControl()
     local ply = self:GetPilot()
     if not IsValid(ply) or ply:GetNW2Entity("ProbeDroidControlled") ~= self then return end
+    ply.ProbeDroidCooldownStarted = CurTime()
+    ply.ProbeDroidCooldownMultiplier = self.DeploymentCooldownMultiplier or 1.5
+    ply:SetNW2Float("ProbeDroidCooldownStarted", ply.ProbeDroidCooldownStarted)
+    ply:SetNW2Float("ProbeDroidCooldownMultiplier", ply.ProbeDroidCooldownMultiplier)
     ply:SetNW2Entity("ProbeDroidControlled", NULL)
     local previous = self.PreviousViewEntity
     ply:SetViewEntity(IsValid(previous) and previous or ply)
@@ -86,20 +91,40 @@ function ENT:UpdateSpeech()
     -- A single cue synchronizes all listeners, including the pilot. Old cues
     -- are ignored when a player first enters the drone's visibility/range.
     self:SetNW2String("ProbeDroidSpeechCue", string.format("%d:%.3f", index, now))
-    local duration = SoundDuration("probe_droid/probedroidspeak" .. index .. ".wav")
+    local duration = SoundDuration("customsounds/probedroidspeak" .. index .. ".wav")
     self.NextSpeech = now + math.max(duration, 0.1) + math.Rand(5, 12)
 end
 
-function ENT:DestroyProbe(reason)
+function ENT:DestroyProbe(reason, mode)
     if self.Destroying then return end
     self.Destroying = true
+    self.DeploymentCooldownMultiplier = mode == "deactivate" and 1 or 1.5
     local ply = self:GetPilot()
-    if IsValid(ply) and reason then ply:ChatPrint("Probe lost: " .. reason) end
-    local effect = EffectData()
-    effect:SetOrigin(self:WorldSpaceCenter())
-    util.Effect("cball_explode", effect, true, true)
-    self:EmitSound("ambient/energy/weld2.wav", 70, 80)
+    if IsValid(ply) then
+        if mode == "deactivate" then
+            net.Start("ProbeDroid.Deactivated")
+            net.Send(ply)
+        elseif reason then
+            ply:ChatPrint("Probe lost: " .. reason)
+        end
+    end
+    local origin = self:WorldSpaceCenter()
+    if mode ~= "deactivate" then
+        local effect = EffectData()
+        effect:SetOrigin(origin)
+        util.Effect(mode == "detonate" and "Explosion" or "cball_explode", effect, true, true)
+        if mode == "detonate" then
+            sound.Play("BaseExplosionEffect.Sound", origin, 90, 100)
+        else
+            self:EmitSound("ambient/energy/weld2.wav", 70, 80)
+        end
+    end
     self:EndControl()
+    if mode == "detonate" then
+        -- Restore the pilot before blast damage so a nearby pilot's death
+        -- cannot leave their body frozen or trigger another detonation.
+        util.BlastDamage(self, IsValid(ply) and ply or self, origin, 250, 250)
+    end
     self:Remove()
 end
 

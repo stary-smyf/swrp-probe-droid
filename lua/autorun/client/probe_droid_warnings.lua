@@ -21,7 +21,7 @@ hook.Add("Think", "ProbeDroid.Warnings", function()
     if IsValid(channel) or loading or RealTime() < nextSound then return end
     loading = true
     local serial = generation
-    sound.PlayFile("sound/probe_droid/warning.wav", "noplay", function(voice)
+    sound.PlayFile("sound/customsounds/warning.wav", "noplay", function(voice)
         if serial ~= generation then
             if IsValid(voice) then voice:Stop() end
             return
